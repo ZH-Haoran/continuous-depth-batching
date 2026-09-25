@@ -1,0 +1,55 @@
+# Machine-specific configuration template
+# Copy this file to _machine_config.sh and update it for the target cluster.
+# _machine_config.sh is gitignored to prevent committing machine-specific paths.
+#
+# The local machine has no GPU. Never run GPU jobs locally; submit them via
+# SLURM on another machine.
+
+# ============================================================================
+# Directory Configuration
+# ============================================================================
+BASE_DIR="/path/to/your/base/directory"
+# Respect a caller-provided REPO_ROOT so jobs can run from a git worktree.
+export REPO_ROOT="${REPO_ROOT:-/path/to/looped-lm-continuous-batching}"
+
+# Set cache directories (datasets as subdirectory of HF_HOME)
+export HF_HOME="$BASE_DIR/.cache/huggingface"
+export HF_DATASETS_CACHE="$HF_HOME/datasets"
+export UV_CACHE_DIR="$BASE_DIR/.cache/uv"
+
+# ============================================================================
+# SLURM Configuration - Customize for your cluster
+# ============================================================================
+
+# GPU jobs (training, evaluation)
+export SLURM_PARTITION_GPU="your-gpu-partition"
+export SLURM_QOS_GPU="your-gpu-qos"
+export SLURM_ACCOUNT=""                        # Optional: SLURM account, leave empty if not required
+export NUM_GPUS="${NUM_GPUS:-1}"               # Number of GPUs per job (overridable via env)
+export SLURM_GPU_TYPE="${SLURM_GPU_TYPE:-}"    # Optional: GPU type constraint (e.g. "h100", "a100")
+export FLASH_ATTENTION="${FLASH_ATTENTION:-flash_attention_3}"
+export SLURM_GPU_MEM="${SLURM_GPU_MEM:-}"      # Optional: GPU memory per GPU (e.g. "80G")
+export SLURM_MEM_GPU="${SLURM_MEM_GPU:-64G}"
+export SLURM_CPUS_GPU="${SLURM_CPUS_GPU:-16}"
+export SLURM_TIME="${SLURM_TIME:-10:00:00}"
+export SLURM_MAIL_USER="your.email@example.com"
+
+# CPU jobs (data preparation, tests)
+export SLURM_PARTITION_CPU="your-cpu-partition"
+export SLURM_QOS_CPU="your-cpu-qos"
+export SLURM_MEM_CPU="${SLURM_MEM_CPU:-32G}"
+export SLURM_CPUS_CPU="${SLURM_CPUS_CPU:-1}"
+
+# ============================================================================
+# Validation Function
+# ============================================================================
+
+validate_config() {
+    for var in REPO_ROOT HF_HOME HF_DATASETS_CACHE UV_CACHE_DIR; do
+        if [ -z "${!var:-}" ]; then
+            echo "ERROR: $var not set after sourcing _machine_config.sh" >&2
+            return 1
+        fi
+    done
+    return 0
+}

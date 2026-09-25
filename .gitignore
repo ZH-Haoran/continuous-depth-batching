@@ -1,0 +1,48 @@
+# Machine-specific config
+shells/_machine_config.sh
+shells/_machine_config_*.sh
+
+# uv / Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Logs / outputs
+logs/
+wandb/
+dev/outputs/
+outputs/
+/models
+*.json
+*.jsonl
+*.html
+
+# Generated binary artifacts
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.csv
+*.PDF
+*.PNG
+*.JPG
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.gz
+*.log
+*.out
+
+# Local dev artifacts
+.DS_Store
+docs/
+
+# Claude
+.claude/
+.cursor/
+.codex*/

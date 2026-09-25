@@ -1,0 +1,135 @@
+# Few-shot examples: Copyright (c) 2020 EleutherAI, MIT License.
+# See LICENSES/lm-evaluation-harness-MIT.txt and THIRD_PARTY_NOTICES.md.
+
+"""The ``gsm8k_cot`` task: 8-shot chain-of-thought GSM8k with regex answer scoring.
+
+Defines the eight fixed CoT exemplars, the ``Q:/A:`` prompt template, the greedy
+stop strings, and the strict/flexible answer-extraction scorers.
+"""
+
+from __future__ import annotations
+
+from looped_cdb.eval.scoring import RegexFilter
+from looped_cdb.eval.tasks import Doc, Scorer, Task, register_task
+
+# Eight fixed CoT exemplars. Each target is a pre-written reasoning string ending
+# in "The answer is N.". These are the canonical 8-shot chain-of-thought GSM8k
+# prompt (Wei et al., 2022), copied verbatim from lm-eval-harness's ``gsm8k-cot``
+# few-shot config so prompts match our earlier lm-eval runs exactly.
+_FEWSHOT_EXAMPLES: list[Doc] = [
+    {
+        "question": (
+            "There are 15 trees in the grove. Grove workers will plant trees in the grove today. "
+            "After they are done, there will be 21 trees. How many trees did the grove workers plant today?"
+        ),
+        "target": (
+            "There are 15 trees originally. Then there were 21 trees after some more were planted. "
+            "So there must have been 21 - 15 = 6. The answer is 6."
+        ),
+    },
+    {
+        "question": "If there are 3 cars in the parking lot and 2 more cars arrive, how many cars are in the parking lot?",
+        "target": "There are originally 3 cars. 2 more cars arrive. 3 + 2 = 5. The answer is 5.",
+    },
+    {
+        "question": "Leah had 32 chocolates and her sister had 42. If they ate 35, how many pieces do they have left in total?",
+        "target": (
+            "Originally, Leah had 32 chocolates. Her sister had 42. So in total they had 32 + 42 = 74. "
+            "After eating 35, they had 74 - 35 = 39. The answer is 39."
+        ),
+    },
+    {
+        "question": (
+            "Jason had 20 lollipops. He gave Denny some lollipops. Now Jason has 12 lollipops. "
+            "How many lollipops did Jason give to Denny?"
+        ),
+        "target": (
+            "Jason started with 20 lollipops. Then he had 12 after giving some to Denny. "
+            "So he gave Denny 20 - 12 = 8. The answer is 8."
+        ),
+    },
+    {
+        "question": "Shawn has five toys. For Christmas, he got two toys each from his mom and dad. How many toys does he have now?",
+        "target": (
+            "Shawn started with 5 toys. If he got 2 toys each from his mom and dad, then that is 4 more toys. "
+            "5 + 4 = 9. The answer is 9."
+        ),
+    },
+    {
+        "question": (
+            "There were nine computers in the server room. Five more computers were installed each day, from monday to thursday. "
+            "How many computers are now in the server room?"
+        ),
+        "target": (
+            "There were originally 9 computers. For each of 4 days, 5 more computers were added. "
+            "So 5 * 4 = 20 computers were added. 9 + 20 is 29. The answer is 29."
+        ),
+    },
+    {
+        "question": (
+            "Michael had 58 golf balls. On tuesday, he lost 23 golf balls. On wednesday, he lost 2 more. "
+            "How many golf balls did he have at the end of wednesday?"
+        ),
+        "target": (
+            "Michael started with 58 golf balls. After losing 23 on tuesday, he had 58 - 23 = 35. "
+            "After losing 2 more, he had 35 - 2 = 33 golf balls. The answer is 33."
+        ),
+    },
+    {
+        "question": "Olivia has $23. She bought five bagels for $3 each. How much money does she have left?",
+        "target": (
+            "Olivia had 23 dollars. 5 bagels for 3 dollars each will be 5 x 3 = 15 dollars. "
+            "So she has 23 - 15 dollars left. 23 - 15 is 8. The answer is 8."
+        ),
+    },
+]
+
+# Applied to both prediction and gold before exact-match comparison.
+_REGEXES_TO_IGNORE = [",", r"\$", r"(?s).*#### ", r"\.$"]
+
+
+def _doc_to_text(doc: Doc) -> str:
+    return f"Q: {doc['question']}\nA:"
+
+
+def _doc_to_target(doc: Doc) -> str:
+    return doc["answer"].split("####")[-1].strip()
+
+
+def _fewshot_target(doc: Doc) -> str:
+    return doc["target"]
+
+
+def build_gsm8k_cot_task() -> Task:
+    """8-shot chain-of-thought GSM8k with a bare ``A:`` answer prefix."""
+
+    scorers = [
+        Scorer(
+            name="strict-match",
+            filter=RegexFilter(r"The answer is (\-?[0-9\.\,]+).", group_select=0),
+            regexes_to_ignore=_REGEXES_TO_IGNORE,
+        ),
+        Scorer(
+            name="flexible-extract",
+            filter=RegexFilter(r"(-?[$0-9.,]{2,})|(-?[0-9]+)", group_select=-1),
+            regexes_to_ignore=_REGEXES_TO_IGNORE,
+        ),
+    ]
+    return Task(
+        name="gsm8k_cot",
+        dataset_path="openai/gsm8k",
+        dataset_name="main",
+        test_split="test",
+        doc_to_text=_doc_to_text,
+        doc_to_target=_doc_to_target,
+        fewshot_examples=_FEWSHOT_EXAMPLES,
+        target_delimiter=" ",
+        fewshot_delimiter="\n\n",
+        stop_strings=["Q:", "</s>", "<|im_end|>"],
+        max_gen_toks=256,
+        scorers=scorers,
+        fewshot_target=_fewshot_target,
+    )
+
+
+register_task("gsm8k_cot", build_gsm8k_cot_task)
