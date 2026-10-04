@@ -135,6 +135,7 @@ class MeasuredRun:
     wall_time_s: float
     peak_allocated: int | None
     peak_reserved: int | None
+    start_time: float
 
 
 def _delayed_synthetic_active(engine_args: EngineArgs) -> bool:
@@ -648,6 +649,7 @@ def measure_once(
         wall_time_s=wall_time_s,
         peak_allocated=peak_allocated,
         peak_reserved=peak_reserved,
+        start_time=start,
     )
 
 

@@ -46,3 +46,7 @@ docs/
 .claude/
 .cursor/
 .codex*/
+
+# Compact serving-event exports can be committed on the server and retrieved via Git.
+!results/**/*.events.jsonl
+!results/**/*.csv

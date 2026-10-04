@@ -39,6 +39,7 @@ from looped_cdb.arrivals import poisson_arrival_offsets
 from looped_cdb.benchmarks import nvtx
 from looped_cdb.benchmarks.exit_distributions import DISTRIBUTION_KINDS
 from looped_cdb.benchmarks.flop_bound import stage_flops
+from looped_cdb.benchmarks.latency_events import write_latency_events
 from looped_cdb.benchmarks.metrics import (
     BenchmarkConfig,
     BenchmarkSummary,
@@ -275,6 +276,12 @@ def parse_args() -> argparse.Namespace:
         "combination is rejected.",
     )
     parser.add_argument("--summary-output", type=Path, default=None, help="Append benchmark summary JSONL here.")
+    parser.add_argument(
+        "--latency-events-dir",
+        type=Path,
+        default=None,
+        help="Save per-request token times and waiting-queue samples for the measured run in this directory.",
+    )
     parser.add_argument(
         "--trace-output",
         type=Path,
@@ -517,6 +524,8 @@ def main() -> None:
         prepared,
         nvtx_label="benchmark.generate" if args.nvtx else None,
         arrival_offsets_s=arrival_offsets_s,
+        record_token_times=args.latency_events_dir is not None,
+        record_queue_samples=args.latency_events_dir is not None,
     )
 
     engine = prepared.engine
@@ -590,9 +599,13 @@ def main() -> None:
     )
     threshold_slug = "none" if args.exit_threshold is None else f"{args.exit_threshold}".replace(".", "p")
     rate_slug = "" if args.request_rate is None else f"-r{args.request_rate}".replace(".", "p")
+    mode = "cb" if args.backend == "cb" else ("cdb-refill" if args.refill else "cdb-norefill")
     summary = BenchmarkSummary(
         config=config,
-        run_id=f"{args.backend}-D{args.max_recurrent_depth}-{workload_name}-q{threshold_slug}{rate_slug}-repeat{args.repeat_index}",
+        run_id=(
+            f"{mode}-D{args.max_recurrent_depth}-{workload_name}"
+            f"-q{threshold_slug}{rate_slug}-repeat{args.repeat_index}"
+        ),
         wall_time_s=measured.wall_time_s,
         generated_tokens=generated_tokens,
         completed_requests=completed_requests,
@@ -617,6 +630,15 @@ def main() -> None:
 
     if args.summary_output is not None:
         write_summary(args.summary_output, summary)
+    if args.latency_events_dir is not None:
+        event_path = write_latency_events(
+            args.latency_events_dir,
+            summary=summary.to_json_dict(),
+            outputs=outputs,
+            queue_samples=engine.scheduler.waiting_queue_samples,
+            start_time=measured.start_time,
+        )
+        print(f"latency_events={event_path}")
     print(f"benchmark_summary={summary.to_json()}")
 
 

@@ -75,6 +75,8 @@ esac
 RATES="${RATES:-$DEFAULT_RATES}"
 WORKLOAD="$(workload_for "$MODEL" "$DATASET")"
 OUTPUT_PATH="${OUTPUT_PATH:-outputs/serving-rate/serving-rate_${MODEL}_${DATASET}.jsonl}"
+RUN_TAG="$(date -u +%Y%m%dT%H%M%S)-${SLURM_JOB_ID:-$$}"
+LATENCY_EVENTS_DIR="${LATENCY_EVENTS_DIR:-results/serving-rate/events_${MODEL}_${DATASET}_${RUN_TAG}}"
 
 # Overridable for partial runs: cb ignores the exit threshold, so a second-threshold sweep
 # reuses the cb rows already measured at the default threshold (BACKENDS="cdb-norefill cdb-refill").
@@ -119,6 +121,7 @@ for repeat in $(seq 0 $((REPEATS - 1))); do
                     --block-size "$BLOCK_SIZE"
                     --repeat-index "$repeat"
                     --summary-output "$OUTPUT_PATH"
+                    --latency-events-dir "$LATENCY_EVENTS_DIR"
                 )
                 # No-refill needs no minimum-batch flag: the engine's wave loop is the strict wave,
                 # running one wave-sized coda at the boundary.
@@ -129,3 +132,5 @@ for repeat in $(seq 0 $((REPEATS - 1))); do
         done
     done
 done
+uv run python scripts/exporters/export_latency_results.py "$LATENCY_EVENTS_DIR" \
+    --output "$LATENCY_EVENTS_DIR/comparison.csv"
