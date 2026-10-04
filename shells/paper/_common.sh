@@ -18,13 +18,15 @@ source "$CONFIG"
 validate_config || exit 1
 
 FLASH_ATTENTION="${FLASH_ATTENTION:-flash_attention_3}" # set by the machine config
+SYNC_EXTRAS=()
+[[ -n "${WANDB_PROJECT:-}" ]] && SYNC_EXTRAS+=(--extra serving)
 case "$FLASH_ATTENTION" in
     flash_attention_3)
-        uv sync --frozen
+        uv sync --frozen "${SYNC_EXTRAS[@]}"
         BLOCK_SIZE="${BLOCK_SIZE:-16}"
         ;;
     flash_attention_2)
-        uv sync --frozen --extra fa2
+        uv sync --frozen --extra fa2 "${SYNC_EXTRAS[@]}"
         # FA2's paged decode kernel requires a page size that is a multiple of 256.
         BLOCK_SIZE="${BLOCK_SIZE:-256}"
         ;;

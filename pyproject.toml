@@ -26,6 +26,8 @@ fa2 = [
     "flash-attn==2.8.3.post1 ; python_version == '3.12'",
     "psutil>=7.2.2",
 ]
+# Optional tracking for serving benchmarks.
+serving = ["wandb>=0.28.0"]
 # For exit-gate distillation training
 train = [
     "accelerate>=1.13.0",

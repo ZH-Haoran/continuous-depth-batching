@@ -680,6 +680,9 @@ fa2 = [
     { name = "flash-attn", marker = "python_full_version < '3.13'" },
     { name = "psutil" },
 ]
+serving = [
+    { name = "wandb" },
+]
 train = [
     { name = "accelerate" },
     { name = "trl" },
@@ -703,9 +706,10 @@ requires-dist = [
     { name = "torch", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cu129" },
     { name = "transformers", specifier = "==5.9.0" },
     { name = "trl", marker = "extra == 'train'", specifier = "==1.7.0" },
+    { name = "wandb", marker = "extra == 'serving'", specifier = ">=0.28.0" },
     { name = "wandb", marker = "extra == 'train'", specifier = ">=0.28.0" },
 ]
-provides-extras = ["fa2", "train"]
+provides-extras = ["fa2", "serving", "train"]
 
 [package.metadata.requires-dev]
 dev = [

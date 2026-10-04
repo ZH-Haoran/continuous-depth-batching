@@ -40,6 +40,7 @@ from looped_cdb.benchmarks import nvtx
 from looped_cdb.benchmarks.exit_distributions import DISTRIBUTION_KINDS
 from looped_cdb.benchmarks.flop_bound import stage_flops
 from looped_cdb.benchmarks.latency_events import write_latency_events
+from looped_cdb.benchmarks.wandb_serving import log_serving_run
 from looped_cdb.benchmarks.metrics import (
     BenchmarkConfig,
     BenchmarkSummary,
@@ -283,6 +284,9 @@ def parse_args() -> argparse.Namespace:
         help="Save per-request token times and waiting-queue samples for the measured run in this directory.",
     )
     parser.add_argument(
+        "--wandb-project", default=None, help="Upload serving metrics and raw events to this W&B project."
+    )
+    parser.add_argument(
         "--trace-output",
         type=Path,
         default=None,
@@ -444,6 +448,15 @@ def main() -> None:
     import torch
 
     args = parse_args()
+    if args.wandb_project is not None and args.latency_events_dir is None:
+        raise ValueError("--wandb-project requires --latency-events-dir")
+    if args.wandb_project is not None:
+        try:
+            import wandb  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                "W&B is unavailable; install the serving extra with uv sync --frozen --extra serving"
+            ) from exc
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper()),
         format="[%(asctime)s] %(message)s",
@@ -639,6 +652,9 @@ def main() -> None:
             start_time=measured.start_time,
         )
         print(f"latency_events={event_path}")
+        if args.wandb_project is not None:
+            run_url = log_serving_run(event_path, project=args.wandb_project)
+            print(f"wandb_run={run_url}")
     print(f"benchmark_summary={summary.to_json()}")
 
 

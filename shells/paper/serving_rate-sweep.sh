@@ -123,14 +123,15 @@ for repeat in $(seq 0 $((REPEATS - 1))); do
                     --summary-output "$OUTPUT_PATH"
                     --latency-events-dir "$LATENCY_EVENTS_DIR"
                 )
+                [[ -n "${WANDB_PROJECT:-}" ]] && args+=(--wandb-project "$WANDB_PROJECT")
                 # No-refill needs no minimum-batch flag: the engine's wave loop is the strict wave,
                 # running one wave-sized coda at the boundary.
                 [[ "$backend" == cdb-refill && -n "$MIN_CODA_BATCH" ]] && args+=(--min-coda-batch-size "$MIN_CODA_BATCH")
-                uv run python scripts/benchmark_throughput.py "${args[@]}"
+                uv run --no-sync python scripts/benchmark_throughput.py "${args[@]}"
                 echo ""
             done
         done
     done
 done
-uv run python scripts/exporters/export_latency_results.py "$LATENCY_EVENTS_DIR" \
+uv run --no-sync python scripts/exporters/export_latency_results.py "$LATENCY_EVENTS_DIR" \
     --output "$LATENCY_EVENTS_DIR/comparison.csv"
