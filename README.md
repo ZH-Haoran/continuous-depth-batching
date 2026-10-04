@@ -8,6 +8,7 @@ It includes the core inference code, workload and evaluation utilities, and scri
 
 > [!NOTE]
 > This codebase is a research implementation of CDB for reproducing the paper's results, not a full serving engine.
+> We are also developing [loop-sglang](https://github.com/kschwethelm/loop-sglang), a lightweight serving engine for looped LMs with CDB support.
 
 ## Scope
 
