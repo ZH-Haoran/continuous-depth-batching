@@ -427,6 +427,7 @@ def generate_once(
     nvtx_registered: bool = False,
     arrival_offsets_s: list[float] | None = None,
     record_token_times: bool = False,
+    record_queue_samples: bool = False,
 ) -> list[Any]:
     """Run one generation call against the selected backend."""
 
@@ -441,6 +442,7 @@ def generate_once(
                 model_kwargs=model_kwargs,
                 arrival_offsets_s=arrival_offsets_s,
                 record_token_times=record_token_times,
+                record_queue_samples=record_queue_samples,
             )
         return engine.generate_batch(
             input_ids,
@@ -451,6 +453,7 @@ def generate_once(
             exit_depths=exit_depths,
             arrival_offsets_s=arrival_offsets_s,
             record_token_times=record_token_times,
+            record_queue_samples=record_queue_samples,
         )
 
 
@@ -608,6 +611,7 @@ def measure_once(
     nvtx_label: str | None = None,
     arrival_offsets_s: list[float] | None = None,
     record_token_times: bool = False,
+    record_queue_samples: bool = False,
 ) -> MeasuredRun:
     """Run one timed generation against a prepared run.
 
@@ -634,6 +638,7 @@ def measure_once(
             exit_depths=prepared.exit_depths,
             arrival_offsets_s=arrival_offsets_s,
             record_token_times=record_token_times,
+            record_queue_samples=record_queue_samples,
         )
         maybe_sync_cuda()
     wall_time_s = time.perf_counter() - start

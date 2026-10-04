@@ -88,6 +88,24 @@ def test_fifo_scheduler_chunks_prefill_and_finishes_remainder() -> None:
     assert second.max_kv_read == 3
 
 
+def test_waiting_queue_samples_are_optional_and_reset_between_runs() -> None:
+    scheduler = FIFOScheduler(_cache(), safety_margin=0.0)
+    scheduler.add_waiting_request(RequestState(request_id="req", initial_tokens=[1]))
+    scheduler.record_resident_sample()
+    assert scheduler.waiting_queue_samples == []
+
+    scheduler.record_queue_samples = True
+    scheduler.record_resident_sample()
+    scheduler.waiting_requests.clear()
+    scheduler.sample_waiting_queue()
+    assert [count for _, count in scheduler.waiting_queue_samples] == [1, 0]
+    assert scheduler.waiting_queue_samples[0][0] <= scheduler.waiting_queue_samples[1][0]
+
+    scheduler.reset()
+    assert scheduler.waiting_queue_samples == []
+    assert not scheduler.record_queue_samples
+
+
 def _decode_and_prefill_scheduler(safety_margin: float) -> tuple[FIFOScheduler, RequestState, RequestState]:
     scheduler = FIFOScheduler(_cache(), safety_margin=safety_margin)
     decoding = RequestState(request_id="decode", initial_tokens=[10])

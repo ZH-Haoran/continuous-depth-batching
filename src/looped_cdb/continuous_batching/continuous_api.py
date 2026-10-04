@@ -231,6 +231,7 @@ class ContinuousBatchingEngine:
         model_kwargs: dict[str, Any] | None = None,
         arrival_offsets_s: list[float] | None = None,
         record_token_times: bool = False,
+        record_queue_samples: bool = False,
     ) -> list[GenerationOutput]:
         """Generate from a batch of tokenized prompts.
 
@@ -246,6 +247,7 @@ class ContinuousBatchingEngine:
         max_new_tokens = normalize_max_new_tokens(max_new_tokens, len(input_ids))
         max_new_tokens = cap_max_new_tokens_to_model_len(input_ids, max_new_tokens, self.cb_config.max_model_len)
         self.reset()
+        self.scheduler.record_queue_samples = record_queue_samples
         if warmup:
             self.runner.warmup(self.model, model_kwargs)
 
@@ -297,6 +299,7 @@ class ContinuousBatchingEngine:
             completed_requests = outcome.completed_requests
 
         self.scheduler.close_steady_window()
+        self.scheduler.sample_waiting_queue()
         return [finished_outputs[state.request_id] for state in states]
 
     def _execute_tick(

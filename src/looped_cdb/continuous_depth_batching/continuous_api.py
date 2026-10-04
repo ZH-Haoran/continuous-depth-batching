@@ -385,6 +385,7 @@ class ContinuousDepthBatchingEngine:
         exit_depths: list[list[int]] | None = None,
         arrival_offsets_s: list[float] | None = None,
         record_token_times: bool = False,
+        record_queue_samples: bool = False,
     ) -> list[GenerationOutput]:
         """Generate from tokenized prompts with decode-time CDB.
 
@@ -407,6 +408,7 @@ class ContinuousDepthBatchingEngine:
         self._validate_model_kwargs(model_kwargs)
         self._validate_exit_depths(input_ids, max_new_tokens, exit_depths)
         self.reset()
+        self.scheduler.record_queue_samples = record_queue_samples
         if warmup:
             self.runner.warmup(self.model, model_kwargs)
 
@@ -436,6 +438,7 @@ class ContinuousDepthBatchingEngine:
         else:
             self._run_no_refill_loop(model_kwargs=model_kwargs, arrivals=arrivals)
         self.scheduler.close_steady_window()
+        self.scheduler.sample_waiting_queue()
         self._free_finished_or_active()
         # Read outputs from the finish-time capture, not the original ``states`` list: soft-reset
         # preemption replaces a request's object (same id), leaving the original entry stale.

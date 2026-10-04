@@ -234,6 +234,8 @@ class BaseServingScheduler[RequestT: SchedulableRequest]:
         self.max_resident_requests = 0
         self.resident_samples = 0
         self.resident_sum = 0
+        self.record_queue_samples = False
+        self.waiting_queue_samples: list[tuple[float, int]] = []
         # Requests that finished generating, and the tokens they generated; preemption does not count.
         self.completed_requests = 0
         self.completed_generated_tokens = 0
@@ -276,7 +278,15 @@ class BaseServingScheduler[RequestT: SchedulableRequest]:
         self.max_resident_requests = max(self.max_resident_requests, resident)
         self.resident_samples += 1
         self.resident_sum += resident
+        if self.record_queue_samples:
+            self.sample_waiting_queue()
         self._advance_steady_window(resident)
+
+    def sample_waiting_queue(self) -> None:
+        """Capture the current waiting count on the same monotonic clock as request latency."""
+
+        if self.record_queue_samples:
+            self.waiting_queue_samples.append((time.perf_counter(), len(self.waiting_requests)))
 
     @property
     def mean_resident_requests(self) -> float:
