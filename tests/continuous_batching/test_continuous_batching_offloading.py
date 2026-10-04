@@ -89,6 +89,22 @@ def test_to_generation_output_recovers_true_prompt_and_full_generation() -> None
     assert output.generated_tokens == [7, 8, 9]  # pre-reset tokens + post-reset tokens
 
 
+def test_token_times_follow_request_across_soft_reset(monkeypatch: pytest.MonkeyPatch) -> None:
+    stamps = iter([10.0, 11.0, 12.0, 13.0])
+    monkeypatch.setattr("looped_cdb.continuous_batching.requests.time.perf_counter", lambda: next(stamps))
+    state = RequestState(request_id="r", initial_tokens=[1], max_new_tokens=3, record_token_times=True)
+    state._status = RequestStatus.DECODING
+    assert not state.update_and_check_completion(7)
+    fresh = state.create_equivalent_initial_request()
+    fresh._status = RequestStatus.DECODING
+    assert not fresh.update_and_check_completion(8)
+    output = fresh.to_generation_output()
+
+    assert output.generated_tokens == [7, 8]
+    assert output.first_token_time == 11.0
+    assert output.token_ready_times == [11.0, 13.0]
+
+
 def test_soft_reset_is_idempotent_across_repeated_preemptions() -> None:
     state = RequestState(request_id="r", initial_tokens=[1, 2], max_new_tokens=10)
     state.generated_tokens = [5]

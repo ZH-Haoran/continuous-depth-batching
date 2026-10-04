@@ -230,6 +230,7 @@ class ContinuousBatchingEngine:
         warmup: bool = True,
         model_kwargs: dict[str, Any] | None = None,
         arrival_offsets_s: list[float] | None = None,
+        record_token_times: bool = False,
     ) -> list[GenerationOutput]:
         """Generate from a batch of tokenized prompts.
 
@@ -256,6 +257,7 @@ class ContinuousBatchingEngine:
                 eos_token_id=eos_token_id,
                 stop_sequences=[list(sequence) for sequence in stop_sequences] if stop_sequences else [],
                 replay_eos_finishes=self.cb_config.replay_eos_finishes,
+                record_token_times=record_token_times,
             )
             for idx, prompt_ids in enumerate(input_ids)
         ]

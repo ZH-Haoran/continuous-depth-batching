@@ -384,6 +384,7 @@ class ContinuousDepthBatchingEngine:
         model_kwargs: dict | None = None,
         exit_depths: list[list[int]] | None = None,
         arrival_offsets_s: list[float] | None = None,
+        record_token_times: bool = False,
     ) -> list[GenerationOutput]:
         """Generate from tokenized prompts with decode-time CDB.
 
@@ -418,6 +419,7 @@ class ContinuousDepthBatchingEngine:
                 stop_sequences=[list(sequence) for sequence in stop_sequences] if stop_sequences else [],
                 synthetic_exit_depths=list(exit_depths[idx]) if exit_depths is not None else [],
                 replay_eos_finishes=self.cdb_config.replay_eos_finishes,
+                record_token_times=record_token_times,
             )
             for idx, prompt_ids in enumerate(input_ids)
         ]

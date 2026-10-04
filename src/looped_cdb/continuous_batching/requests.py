@@ -66,6 +66,7 @@ class GenerationOutput:
     created_time: float = field(default_factory=time.perf_counter)
     lifespan: tuple[float, float] = (-1, -1)  # (time request was no longer pending, time request finished)
     first_token_time: float = -1.0  # Time the first generated token reached the host (-1 if none yet)
+    token_ready_times: list[float] = field(default_factory=list)
 
     def is_finished(self) -> bool:
         return self.status == RequestStatus.FINISHED
@@ -116,6 +117,8 @@ class RequestState:
     created_time: float = field(default_factory=time.perf_counter)  # Time the request was created
     lifespan: tuple[float, float] = (-1, -1)  # (time request was no longer pending, time request finished)
     first_token_time: float = -1.0  # Time the first generated token reached the host (-1 if none yet)
+    record_token_times: bool = False
+    token_ready_times: list[float] = field(default_factory=list)
 
     # True when the request's KV cache currently lives in the CPU swap pool (offloaded, awaiting restore).
     is_cpu_offloaded: bool = False
@@ -216,8 +219,12 @@ class RequestState:
         if is_eos or (current_len < self._new_tokens_limit):
             # First generated token: stamp TTFT once. A soft reset folds generated tokens into the
             # prompt (emptying ``generated_tokens``), so the guard is on the stamp, not the list.
-            if self.first_token_time < 0:
-                self.first_token_time = time.perf_counter()
+            if self.first_token_time < 0 or self.record_token_times:
+                ready_time = time.perf_counter()
+                if self.first_token_time < 0:
+                    self.first_token_time = ready_time
+                if self.record_token_times:
+                    self.token_ready_times.append(ready_time)
             self.generated_tokens.append(token_id)
             self.tokens_to_process = [token_id]
             current_len += 1
@@ -303,6 +310,8 @@ class RequestState:
         new_state.created_time = self.created_time
         new_state.lifespan = self.lifespan
         new_state.first_token_time = self.first_token_time
+        new_state.record_token_times = self.record_token_times
+        new_state.token_ready_times = self.token_ready_times.copy()
         return new_state
 
     def to_generation_output(self) -> GenerationOutput:
@@ -321,6 +330,7 @@ class RequestState:
             created_time=self.created_time,
             lifespan=self.lifespan,
             first_token_time=self.first_token_time,
+            token_ready_times=self.token_ready_times,
         )
 
 
