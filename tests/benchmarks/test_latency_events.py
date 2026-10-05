@@ -92,6 +92,7 @@ def test_event_export_includes_kv_occupancy(tmp_path) -> None:
         resident_usage_samples=[(10.2, 1)],
         kv_admission_pause_samples=[(10.2, 1)],
         preemption_events=[(10.3, "r", "offload")],
+        kv_transfer_events=[(10.3, "gpu_to_cpu", 512)],
     )
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     kv = next(row for row in rows if row["type"] == "kv")
@@ -103,3 +104,6 @@ def test_event_export_includes_kv_occupancy(tmp_path) -> None:
     preemption = next(row for row in rows if row["type"] == "preemption")
     assert preemption == {"type": "preemption", "time_s": pytest.approx(0.3),
                           "request_id": "r", "policy": "offload"}
+    transfer = next(row for row in rows if row["type"] == "kv_transfer")
+    assert transfer == {"type": "kv_transfer", "time_s": pytest.approx(0.3),
+                        "direction": "gpu_to_cpu", "bytes": 512}

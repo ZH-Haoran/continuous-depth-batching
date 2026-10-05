@@ -94,6 +94,23 @@ def _kv_admission_pause_rows(path: Path) -> list[list[float | int]]:
     return rows
 
 
+def _kv_transfer_rows(path: Path) -> dict[str, list[list[float]]]:
+    """Cumulative bytes of KV copies enqueued on the compute stream."""
+
+    events: dict[str, list[list[float]]] = {"gpu_to_cpu": [], "cpu_to_gpu": []}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        if row["type"] == "kv_transfer":
+            events[row["direction"]].append([row["time_s"], row["bytes"]])
+    for direction, rows in events.items():
+        total = 0.0
+        for row in sorted(rows, key=lambda item: item[0]):
+            total += row[1] / 1024**3
+            row[1] = total
+        events[direction] = sorted(rows, key=lambda item: item[0])
+    return events
+
+
 def log_serving_run(path: Path, *, project: str) -> str | None:
     """Log comparable scalar metrics, queue samples, and the complete event file to W&B."""
 
@@ -171,6 +188,16 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
                 table = wandb.Table(columns=["elapsed_s", "stall_ms", "request_id"], data=stalls[:10000])
                 run.log({f"preemption/{policy}_to_next_token_ms": wandb.plot.scatter(
                     table, "elapsed_s", "stall_ms", title=f"{policy.title()} to next output token (ms)"
+                )})
+        for direction, transfers in _kv_transfer_rows(path).items():
+            if transfers:
+                run.log({f"kv_transfer/{direction}_gib": transfers[-1][1]})
+                chart_rows = transfers
+                if len(chart_rows) > 10000:
+                    chart_rows = transfers[::max(1, len(transfers) // 9999)][:9999] + [transfers[-1]]
+                table = wandb.Table(columns=["elapsed_s", "cumulative_gib"], data=chart_rows)
+                run.log({f"kv_transfer/{direction}_cumulative_gib": wandb.plot.line(
+                    table, "elapsed_s", "cumulative_gib", title=f"KV {direction} copied (GiB enqueued)"
                 )})
         artifact = wandb.Artifact(name=f"serving-events-{run.id}", type="serving-events")
         artifact.add_file(str(path))

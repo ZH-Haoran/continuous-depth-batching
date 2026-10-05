@@ -364,6 +364,7 @@ def test_swap_offload_then_restore_round_trips_kv_blocks_on_cpu() -> None:
     cache = _cache()
     scheduler = FIFOScheduler(cache, safety_margin=0.0)
     manager = OffloadingManager(cache, scheduler, cpu_offload_space_gib=0.001, pin_memory=False)
+    manager.record_preemption_events = True
     assert manager.offloading_enabled
 
     state = _decoding_request(scheduler, cache, "r", prompt_len=6)  # decodes into two KV blocks
@@ -387,6 +388,11 @@ def test_swap_offload_then_restore_round_trips_kv_blocks_on_cpu() -> None:
             value_views[layer][block_id] = 0
 
     manager.restore_scheduled_requests([FutureRequestState(state, has_new_token=True, query_length=1)])
+
+    expected_bytes = offloaded_blocks * 2 * len(cache.key_cache) * cache.block_size * cache.num_key_value_heads * cache.head_dim * cache.dtype.itemsize
+    assert [(direction, size) for _, direction, size in manager.kv_transfer_events] == [
+        ("gpu_to_cpu", expected_bytes), ("cpu_to_gpu", expected_bytes)
+    ]
 
     assert state.is_cpu_offloaded is False
     assert len(manager._free_cpu_blocks) == free_cpu_before  # CPU blocks returned to the pool

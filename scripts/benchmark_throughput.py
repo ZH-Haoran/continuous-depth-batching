@@ -654,6 +654,7 @@ def main() -> None:
             resident_usage_samples=engine.scheduler.resident_usage_samples,
             kv_admission_pause_samples=engine.scheduler.kv_admission_pause_samples,
             preemption_events=engine.offloading_manager.preemption_events,
+            kv_transfer_events=engine.offloading_manager.kv_transfer_events,
         )
         print(f"latency_events={event_path}")
         if args.wandb_project is not None:

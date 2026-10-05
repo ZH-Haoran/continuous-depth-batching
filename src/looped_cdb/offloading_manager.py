@@ -69,6 +69,7 @@ class OffloadingManager:
         # Optional event recording for serving diagnostics; disabled on normal runs.
         self.record_preemption_events = False
         self.preemption_events: list[tuple[float, str, str]] = []
+        self.kv_transfer_events: list[tuple[float, str, int]] = []
 
         self._num_cpu_blocks = self._compute_num_cpu_blocks(cpu_offload_space_gib)
         self._cpu_key_cache: list[torch.Tensor] = []
@@ -132,7 +133,15 @@ class OffloadingManager:
 
         if not cpu_offload_space_gib or cpu_offload_space_gib <= 0:
             return 0
-        bytes_per_block = (
+        bytes_per_block = self._bytes_per_block()
+        if bytes_per_block == 0:
+            raise ValueError("bytes per KV block is 0; cannot size the CPU swap pool")
+        return int(cpu_offload_space_gib * 1024**3) // bytes_per_block
+
+    def _bytes_per_block(self) -> int:
+        """Bytes copied for one KV block across all model layers."""
+
+        return (
             2  # key and value
             * len(self.cache.key_cache)
             * self.cache.block_size
@@ -140,9 +149,6 @@ class OffloadingManager:
             * self.cache.head_dim
             * self.cache.dtype.itemsize
         )
-        if bytes_per_block == 0:
-            raise ValueError("bytes per KV block is 0; cannot size the CPU swap pool")
-        return int(cpu_offload_space_gib * 1024**3) // bytes_per_block
 
     def _stream_ctx(self):
         """Run enclosed ops on the compute stream, or a no-op context when none is set."""
@@ -241,6 +247,10 @@ class OffloadingManager:
             for cpu_v, gpu_v in zip(self._cpu_value_cache, self._gpu_value_views):
                 for cpu_b, gpu_b in zip(all_cpu_indices, all_gpu_indices, strict=True):
                     gpu_v[gpu_b].copy_(cpu_v[cpu_b], non_blocking=True)
+        if self.record_preemption_events:
+            self.kv_transfer_events.append(
+                (time.perf_counter(), "cpu_to_gpu", len(all_cpu_indices) * self._bytes_per_block())
+            )
         # Returning the pool blocks now is safe only because every pool access is stream-ordered on the
         # compute stream: the non-blocking H2D reads above are enqueued before the next user of these
         # blocks. Moving the transfers to a dedicated copy stream (for real overlap) would make this a
@@ -269,6 +279,8 @@ class OffloadingManager:
             for cpu_v, gpu_v in zip(self._cpu_value_cache, self._gpu_value_views):
                 for cpu_b, gpu_b in zip(cpu_indices, gpu_indices, strict=True):
                     cpu_v[cpu_b].copy_(gpu_v[gpu_b], non_blocking=True)
+        if self.record_preemption_events:
+            self.kv_transfer_events.append((time.perf_counter(), "gpu_to_cpu", total * self._bytes_per_block()))
 
         # The victim's GPU blocks are freed by the caller's ``scheduler.finish_request``; the copy
         # above ran while they were still allocated, so their contents are now safe on the host.
@@ -299,3 +311,4 @@ class OffloadingManager:
         self.num_restores = 0
         self.record_preemption_events = False
         self.preemption_events.clear()
+        self.kv_transfer_events.clear()
