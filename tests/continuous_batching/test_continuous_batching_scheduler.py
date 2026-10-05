@@ -134,6 +134,23 @@ def test_resident_usage_samples_track_active_requests() -> None:
     assert scheduler.resident_usage_samples == []
 
 
+def test_kv_headroom_pause_requires_an_admissible_waiter() -> None:
+    scheduler = FIFOScheduler(_cache(), safety_margin=0.5, min_free_slots=1)
+    scheduler.record_queue_samples = True
+    scheduler.has_decode_work = lambda: True
+    scheduler.cache.allocate_blocks(5, "held", 0)
+    scheduler.sample_waiting_queue()
+    assert scheduler.kv_admission_pause_samples[-1][1] == 0
+
+    scheduler.add_waiting_request(RequestState(request_id="waiting", initial_tokens=[1]))
+    scheduler.sample_waiting_queue()
+    assert scheduler.kv_admission_pause_samples[-1][1] == 1
+
+    scheduler.cache.free_blocks("held")
+    scheduler.sample_waiting_queue()
+    assert scheduler.kv_admission_pause_samples[-1][1] == 0
+
+
 def _decode_and_prefill_scheduler(safety_margin: float) -> tuple[FIFOScheduler, RequestState, RequestState]:
     scheduler = FIFOScheduler(_cache(), safety_margin=safety_margin)
     decoding = RequestState(request_id="decode", initial_tokens=[10])

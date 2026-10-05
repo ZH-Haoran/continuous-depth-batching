@@ -238,6 +238,7 @@ class BaseServingScheduler[RequestT: SchedulableRequest]:
         self.waiting_queue_samples: list[tuple[float, int]] = []
         self.kv_usage_samples: list[tuple[float, int]] = []
         self.resident_usage_samples: list[tuple[float, int]] = []
+        self.kv_admission_pause_samples: list[tuple[float, int]] = []
         # Requests that finished generating, and the tokens they generated; preemption does not count.
         self.completed_requests = 0
         self.completed_generated_tokens = 0
@@ -292,6 +293,18 @@ class BaseServingScheduler[RequestT: SchedulableRequest]:
             self.waiting_queue_samples.append((stamp, len(self.waiting_requests)))
             self.kv_usage_samples.append((stamp, self.cache.num_blocks - self.cache.get_num_free_blocks()))
             self.resident_usage_samples.append((stamp, len(self.active_requests)))
+            self.kv_admission_pause_samples.append((stamp, int(self.kv_headroom_blocks_admission())))
+
+    def kv_headroom_blocks_admission(self) -> bool:
+        """Whether KV headroom alone prevents an otherwise eligible new prefill."""
+
+        return (
+            self.kv_pressure_mode != "reserve"
+            and self.free_residency_slots() >= self.min_free_slots
+            and any(not state.is_cpu_offloaded for state in self.waiting_requests.values())
+            and self.has_decode_work()
+            and not self.has_prefill_headroom()
+        )
 
     @property
     def mean_resident_requests(self) -> float:

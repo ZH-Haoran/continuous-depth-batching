@@ -63,6 +63,15 @@ def _resident_table_rows(path: Path, limit: int = 10000) -> list[list[float | in
     return reduced[: limit - 1] + [rows[-1]] if len(reduced) > limit else reduced
 
 
+def _kv_admission_pause_rows(path: Path) -> list[list[float | int]]:
+    rows: list[list[float | int]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        if row["type"] == "kv_admission_pause":
+            rows.append([row["time_s"], row["paused"]])
+    return rows
+
+
 def log_serving_run(path: Path, *, project: str) -> str | None:
     """Log comparable scalar metrics, queue samples, and the complete event file to W&B."""
 
@@ -109,6 +118,26 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
                 {
                     "batch/resident_requests": wandb.plot.line(
                         resident_table, "elapsed_s", "requests", title="Active requests"
+                    )
+                }
+            )
+        pause_rows = _kv_admission_pause_rows(path)
+        if pause_rows:
+            paused_s = sum(
+                (later[0] - earlier[0]) * earlier[1] for earlier, later in zip(pause_rows, pause_rows[1:])
+            )
+            run.log({"kv/admission_paused_s": paused_s})
+            chart_rows = pause_rows
+            if len(chart_rows) > 10000:
+                stride = max(1, (len(chart_rows) - 1) // 9999)
+                chart_rows = chart_rows[::stride]
+                if chart_rows[-1] != pause_rows[-1]:
+                    chart_rows = chart_rows[:9999] + [pause_rows[-1]]
+            pause_table = wandb.Table(columns=["elapsed_s", "paused"], data=chart_rows)
+            run.log(
+                {
+                    "kv/admission_paused": wandb.plot.line(
+                        pause_table, "elapsed_s", "paused", title="New-request admission paused by KV headroom"
                     )
                 }
             )

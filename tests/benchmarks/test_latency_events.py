@@ -90,9 +90,12 @@ def test_event_export_includes_kv_occupancy(tmp_path) -> None:
         start_time=10.0,
         kv_usage_samples=[(10.2, 3)],
         resident_usage_samples=[(10.2, 1)],
+        kv_admission_pause_samples=[(10.2, 1)],
     )
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     kv = next(row for row in rows if row["type"] == "kv")
     assert kv == {"type": "kv", "time_s": pytest.approx(0.2), "used_blocks": 3}
     resident = next(row for row in rows if row["type"] == "resident")
     assert resident == {"type": "resident", "time_s": pytest.approx(0.2), "requests": 1}
+    pause = next(row for row in rows if row["type"] == "kv_admission_pause")
+    assert pause == {"type": "kv_admission_pause", "time_s": pytest.approx(0.2), "paused": 1}
