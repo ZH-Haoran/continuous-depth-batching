@@ -327,8 +327,10 @@ def test_preemption_event_records_actual_policy_and_clears_on_reset() -> None:
     stamp, request_id, policy = manager.preemption_events[0]
     assert stamp > 0
     assert (request_id, policy) == ("victim", "recompute")
+    assert manager.recompute_events[0][1] == 8
     manager.reset()
     assert manager.preemption_events == []
+    assert manager.recompute_events == []
 
 
 # --- manager swap path end to end (offload -> restore round-trip, CPU) ---------------------------

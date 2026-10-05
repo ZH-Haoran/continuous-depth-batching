@@ -22,6 +22,7 @@ def write_latency_events(
     kv_admission_pause_samples: Iterable[tuple[float, int]] = (),
     preemption_events: Iterable[tuple[float, str, str]] = (),
     kv_transfer_events: Iterable[tuple[float, str, int]] = (),
+    recompute_events: Iterable[tuple[float, int]] = (),
 ) -> Path:
     """Write one measured run; all timestamps are seconds since the run began."""
 
@@ -62,6 +63,9 @@ def write_latency_events(
         for stamp, direction, bytes_copied in kv_transfer_events:
             _write_line(handle, {"type": "kv_transfer", "time_s": stamp - start_time,
                                  "direction": direction, "bytes": bytes_copied})
+        for stamp, tokens in recompute_events:
+            _write_line(handle, {"type": "recompute", "time_s": stamp - start_time,
+                                 "tokens_to_reprefill": tokens})
     return path
 
 

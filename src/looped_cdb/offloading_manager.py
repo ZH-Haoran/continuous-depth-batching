@@ -70,6 +70,7 @@ class OffloadingManager:
         self.record_preemption_events = False
         self.preemption_events: list[tuple[float, str, str]] = []
         self.kv_transfer_events: list[tuple[float, str, int]] = []
+        self.recompute_events: list[tuple[float, int]] = []
 
         self._num_cpu_blocks = self._compute_num_cpu_blocks(cpu_offload_space_gib)
         self._cpu_key_cache: list[torch.Tensor] = []
@@ -203,6 +204,8 @@ class OffloadingManager:
             new_state = state.create_equivalent_initial_request()
             self.num_recompute_preemptions += 1
             policy = "recompute"
+            if self.record_preemption_events:
+                self.recompute_events.append((time.perf_counter(), len(new_state.remaining_prefill_tokens)))
 
         if self.record_preemption_events:
             self.preemption_events.append((preempted_at, request_id, policy))
@@ -312,3 +315,4 @@ class OffloadingManager:
         self.record_preemption_events = False
         self.preemption_events.clear()
         self.kv_transfer_events.clear()
+        self.recompute_events.clear()

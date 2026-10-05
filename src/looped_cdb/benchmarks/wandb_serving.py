@@ -155,6 +155,20 @@ def _arrival_window_backlog(path: Path) -> tuple[int, list[list[float | int]]] |
     return count, timeline
 
 
+def _recompute_rows(path: Path) -> list[list[float | int]]:
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        if row["type"] == "recompute":
+            events.append((row["time_s"], row["tokens_to_reprefill"]))
+    total = 0
+    rows: list[list[float | int]] = []
+    for stamp, tokens in sorted(events):
+        total += tokens
+        rows.append([stamp, total])
+    return rows
+
+
 def log_serving_run(path: Path, *, project: str) -> str | None:
     """Log comparable scalar metrics, queue samples, and the complete event file to W&B."""
 
@@ -264,6 +278,17 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
             table = wandb.Table(columns=["elapsed_s", "unfinished_requests"], data=timeline)
             run.log({"backlog/unfinished_during_arrivals": wandb.plot.line(
                 table, "elapsed_s", "unfinished_requests", title="Arrived but unfinished requests"
+            )})
+        recompute_rows = _recompute_rows(path)
+        if recompute_rows:
+            run.log({"preemption/tokens_to_reprefill": recompute_rows[-1][1]})
+            chart_rows = recompute_rows
+            if len(chart_rows) > 10000:
+                stride = math.ceil(len(chart_rows) / 10000)
+                chart_rows = chart_rows[::stride][:9999] + [recompute_rows[-1]]
+            table = wandb.Table(columns=["elapsed_s", "cumulative_tokens"], data=chart_rows)
+            run.log({"preemption/cumulative_tokens_to_reprefill": wandb.plot.line(
+                table, "elapsed_s", "cumulative_tokens", title="Prompt tokens scheduled for recomputation"
             )})
         artifact = wandb.Artifact(name=f"serving-events-{run.id}", type="serving-events")
         artifact.add_file(str(path))
