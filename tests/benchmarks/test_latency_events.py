@@ -94,6 +94,7 @@ def test_event_export_includes_kv_occupancy(tmp_path) -> None:
         preemption_events=[(10.3, "r", "offload")],
         kv_transfer_events=[(10.3, "gpu_to_cpu", 512)],
         recompute_events=[(10.4, 8)],
+        stage_timeline_samples=[(10.4, "prefill", 2)],
     )
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     kv = next(row for row in rows if row["type"] == "kv")
@@ -111,3 +112,6 @@ def test_event_export_includes_kv_occupancy(tmp_path) -> None:
     recompute = next(row for row in rows if row["type"] == "recompute")
     assert recompute == {"type": "recompute", "time_s": pytest.approx(0.4),
                          "tokens_to_reprefill": 8}
+    stage = next(row for row in rows if row["type"] == "stage_launch")
+    assert stage == {"type": "stage_launch", "time_s": pytest.approx(0.4),
+                     "stage": "prefill", "batch_size": 2}

@@ -126,3 +126,19 @@ def test_trace_round_trips_through_jsonl_and_resets_per_generation(tmp_path: Pat
     trace.write_jsonl(path)
     assert ScheduleTrace.load_jsonl(path) == second
     assert len(path.read_text().splitlines()) == len(second)
+
+
+def test_serving_stage_timeline_records_launches_without_full_trace() -> None:
+    engine = _traced_engine(refill=True)
+    engine.schedule_trace = None
+    engine.generate_batch(
+        input_ids=PROMPTS,
+        max_new_tokens=MAX_NEW_TOKENS,
+        eos_token_id=None,
+        warmup=False,
+        exit_depths=EXIT_DEPTHS,
+        record_queue_samples=True,
+    )
+
+    assert {stage for _, stage, _ in engine.stage_timeline_samples} == set(TRACE_STAGES)
+    assert all(stamp > 0 and size > 0 for stamp, _, size in engine.stage_timeline_samples)

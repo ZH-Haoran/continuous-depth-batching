@@ -169,6 +169,15 @@ def _recompute_rows(path: Path) -> list[list[float | int]]:
     return rows
 
 
+def _stage_launch_rows(path: Path) -> dict[str, list[list[float | int]]]:
+    stages: dict[str, list[list[float | int]]] = {name: [] for name in ("prefill", "prelude", "recurrent", "coda")}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        if row["type"] == "stage_launch":
+            stages[row["stage"]].append([row["time_s"], row["batch_size"]])
+    return stages
+
+
 def log_serving_run(path: Path, *, project: str) -> str | None:
     """Log comparable scalar metrics, queue samples, and the complete event file to W&B."""
 
@@ -290,6 +299,16 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
             run.log({"preemption/cumulative_tokens_to_reprefill": wandb.plot.line(
                 table, "elapsed_s", "cumulative_tokens", title="Prompt tokens scheduled for recomputation"
             )})
+        for stage, stage_rows in _stage_launch_rows(path).items():
+            if stage_rows:
+                chart_rows = stage_rows
+                if len(chart_rows) > 10000:
+                    stride = math.ceil(len(chart_rows) / 10000)
+                    chart_rows = chart_rows[::stride][:9999] + [stage_rows[-1]]
+                table = wandb.Table(columns=["elapsed_s", "batch_size"], data=chart_rows)
+                run.log({f"stage/{stage}_batch_size": wandb.plot.scatter(
+                    table, "elapsed_s", "batch_size", title=f"CDB {stage} launches: batch size"
+                )})
         artifact = wandb.Artifact(name=f"serving-events-{run.id}", type="serving-events")
         artifact.add_file(str(path))
         run.log_artifact(artifact)

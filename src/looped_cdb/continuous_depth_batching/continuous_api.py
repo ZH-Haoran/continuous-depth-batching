@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections import Counter, deque
 from contextlib import nullcontext
 from dataclasses import dataclass, field
@@ -267,6 +268,8 @@ class ContinuousDepthBatchingEngine:
     # their exit-step KV into deeper slots is batched per recurrent launch, not issued per token.
     _exit_kv_backlog: list[tuple[DepthWorkItem, int]] = field(default_factory=list)
     schedule_trace: ScheduleTrace | None = None
+    record_stage_timeline: bool = False
+    stage_timeline_samples: list[tuple[float, str, int]] = field(default_factory=list)
 
     @classmethod
     def from_model(
@@ -410,6 +413,7 @@ class ContinuousDepthBatchingEngine:
         self.reset()
         self.scheduler.record_queue_samples = record_queue_samples
         self.offloading_manager.record_preemption_events = record_queue_samples
+        self.record_stage_timeline = record_queue_samples
         if warmup:
             self.runner.warmup(self.model, model_kwargs)
 
@@ -463,11 +467,16 @@ class ContinuousDepthBatchingEngine:
         self.stalled_decoders.clear()
         self.finished_outputs.clear()
         self._exit_kv_backlog.clear()
+        self.record_stage_timeline = False
+        self.stage_timeline_samples.clear()
         if self.schedule_trace is not None:
             self.schedule_trace.reset()
 
     def _trace(self, stage: TraceStage, size: int, **detail: object) -> None:
         """Record a stage launch and the resulting queue occupancy when tracing is enabled."""
+
+        if self.record_stage_timeline:
+            self.stage_timeline_samples.append((time.perf_counter(), stage, size))
 
         trace = self.schedule_trace
         if trace is None:

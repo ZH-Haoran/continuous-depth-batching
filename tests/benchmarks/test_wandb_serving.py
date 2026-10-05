@@ -48,6 +48,7 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
         preemption_events=[(10.4, "r", "recompute")],
         kv_transfer_events=[(10.5, "gpu_to_cpu", 1024**3), (10.6, "cpu_to_gpu", 1024**3)],
         recompute_events=[(10.4, 8)],
+        stage_timeline_samples=[(10.4, "prefill", 2), (10.6, "recurrent", 1)],
     )
     logged = []
     artifacts = []
@@ -115,6 +116,8 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
     assert logged[13]["preemption/cumulative_tokens_to_reprefill"]["table"]["data"] == [
         [pytest.approx(0.4), 8]
     ]
+    assert logged[14]["stage/prefill_batch_size"]["table"]["data"] == [[pytest.approx(0.4), 2]]
+    assert logged[15]["stage/recurrent_batch_size"]["table"]["data"] == [[pytest.approx(0.6), 1]]
     assert artifacts[0].files == [str(path)]
 
 
