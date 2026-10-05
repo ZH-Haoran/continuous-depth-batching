@@ -132,6 +132,29 @@ def _arrival_window_token_rate(path: Path) -> tuple[float, list[list[float]]] | 
     return len(token_times) / end_s, timeline
 
 
+def _arrival_window_backlog(path: Path) -> tuple[int, list[list[float | int]]] | None:
+    """Arrived requests still unfinished when the scheduled arrival trace ends."""
+
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    if rows[0]["summary"]["config"].get("request_rate_rps") is None:
+        return None
+    requests = [row for row in rows[1:] if row["type"] == "request"]
+    if not requests:
+        return None
+    end_s = max(row["arrival_s"] for row in requests)
+    if end_s <= 0:
+        return None
+    changes = [(row["arrival_s"], 1) for row in requests]
+    changes.extend((row["finish_s"], -1) for row in requests if row["finish_s"] <= end_s)
+    changes.sort()
+    count = 0
+    timeline: list[list[float | int]] = [[0.0, 0]]
+    for stamp, change in changes:
+        count += change
+        timeline.append([stamp, count])
+    return count, timeline
+
+
 def log_serving_run(path: Path, *, project: str) -> str | None:
     """Log comparable scalar metrics, queue samples, and the complete event file to W&B."""
 
@@ -230,6 +253,17 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
             table = wandb.Table(columns=["elapsed_s", "output_tokens_per_s"], data=timeline)
             run.log({"throughput/arrival_window_token_rate": wandb.plot.line(
                 table, "elapsed_s", "output_tokens_per_s", title="Output tokens/s while requests arrive"
+            )})
+        backlog = _arrival_window_backlog(path)
+        if backlog is not None:
+            count, timeline = backlog
+            run.log({"backlog/requests_at_last_arrival": count})
+            if len(timeline) > 10000:
+                stride = math.ceil(len(timeline) / 10000)
+                timeline = timeline[::stride][:9999] + [timeline[-1]]
+            table = wandb.Table(columns=["elapsed_s", "unfinished_requests"], data=timeline)
+            run.log({"backlog/unfinished_during_arrivals": wandb.plot.line(
+                table, "elapsed_s", "unfinished_requests", title="Arrived but unfinished requests"
             )})
         artifact = wandb.Artifact(name=f"serving-events-{run.id}", type="serving-events")
         artifact.add_file(str(path))

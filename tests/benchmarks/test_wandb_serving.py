@@ -126,3 +126,19 @@ def test_arrival_window_throughput_excludes_drain_tokens(tmp_path: Path) -> None
 
     assert rate == 1.0
     assert timeline == [[0.0, 1.0], [1.0, 1.0]]
+
+
+def test_arrival_window_backlog_counts_resident_and_waiting(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    events = [
+        {"type": "run", "summary": {"config": {"request_rate_rps": 2.0}}},
+        {"type": "request", "arrival_s": 0.5, "finish_s": 1.5},
+        {"type": "request", "arrival_s": 1.0, "finish_s": 2.5},
+        {"type": "request", "arrival_s": 2.0, "finish_s": 3.0},
+    ]
+    path.write_text("\n".join(json.dumps(event) for event in events), encoding="utf-8")
+
+    count, timeline = wandb_serving._arrival_window_backlog(path)
+
+    assert count == 2
+    assert timeline == [[0.0, 0], [0.5, 1], [1.0, 2], [1.5, 1], [2.0, 2]]
