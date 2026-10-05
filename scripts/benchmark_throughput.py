@@ -658,6 +658,7 @@ def main() -> None:
             recompute_events=engine.offloading_manager.recompute_events,
             stage_timeline_samples=engine.stage_timeline_samples if args.backend == "cdb" else (),
             transfer_duration_samples=engine.offloading_manager.transfer_duration_samples(),
+            restore_events=engine.offloading_manager.restore_events,
         )
         print(f"latency_events={event_path}")
         if args.wandb_project is not None:

@@ -50,6 +50,7 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
         recompute_events=[(10.4, 8)],
         stage_timeline_samples=[(10.4, "prefill", 2), (10.6, "recurrent", 1)],
         transfer_duration_samples=[(10.5, "gpu_to_cpu", 1.25), (10.6, "cpu_to_gpu", 0.75)],
+        restore_events=[(10.7, "r")],
     )
     logged = []
     artifacts = []
@@ -156,3 +157,18 @@ def test_arrival_window_backlog_counts_resident_and_waiting(tmp_path: Path) -> N
 
     assert count == 2
     assert timeline == [[0.0, 0], [0.5, 1], [1.0, 2], [1.5, 1], [2.0, 2]]
+
+
+def test_offload_restore_wait_matches_request_and_ignores_recompute(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    events = [
+        {"type": "preemption", "time_s": 1.0, "request_id": "a", "policy": "offload"},
+        {"type": "preemption", "time_s": 1.2, "request_id": "b", "policy": "recompute"},
+        {"type": "restore", "time_s": 1.8, "request_id": "a"},
+        {"type": "restore", "time_s": 2.0, "request_id": "b"},
+    ]
+    path.write_text("\n".join(json.dumps(event) for event in events), encoding="utf-8")
+
+    rows = wandb_serving._offload_restore_wait_rows(path)
+
+    assert rows == [[1.8, pytest.approx(800), "a"]]

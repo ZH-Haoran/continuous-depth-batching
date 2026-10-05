@@ -187,6 +187,22 @@ def _kv_transfer_duration_rows(path: Path) -> dict[str, list[list[float]]]:
     return directions
 
 
+def _offload_restore_wait_rows(path: Path) -> list[list[float | str]]:
+    """Time from an offload preemption until its request starts restoring."""
+
+    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    active: dict[str, float] = {}
+    rows: list[list[float | str]] = []
+    for event in sorted(events, key=lambda item: item.get("time_s", float("-inf"))):
+        if event["type"] == "preemption" and event["policy"] == "offload":
+            active[event["request_id"]] = event["time_s"]
+        elif event["type"] == "restore":
+            start = active.pop(event["request_id"], None)
+            if start is not None:
+                rows.append([event["time_s"], 1000 * (event["time_s"] - start), event["request_id"]])
+    return rows
+
+
 def log_serving_run(path: Path, *, project: str) -> str | None:
     """Log comparable scalar metrics, queue samples, and the complete event file to W&B."""
 
@@ -331,6 +347,18 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
                 run.log({f"kv_transfer/{direction}_duration_ms": wandb.plot.scatter(
                     table, "elapsed_s", "duration_ms", title=f"KV {direction} GPU copy time (ms)"
                 )})
+        restore_wait = _offload_restore_wait_rows(path)
+        if restore_wait:
+            durations = sorted(row[1] for row in restore_wait)
+            run.log({"preemption/offload_to_restore_p95_ms": durations[int(0.95 * (len(durations) - 1))]})
+            chart_rows = restore_wait
+            if len(chart_rows) > 10000:
+                stride = math.ceil(len(chart_rows) / 10000)
+                chart_rows = chart_rows[::stride][:9999] + [restore_wait[-1]]
+            table = wandb.Table(columns=["elapsed_s", "wait_ms", "request_id"], data=chart_rows)
+            run.log({"preemption/offload_to_restore_ms": wandb.plot.scatter(
+                table, "elapsed_s", "wait_ms", title="Offload until restoration begins (ms)"
+            )})
         artifact = wandb.Artifact(name=f"serving-events-{run.id}", type="serving-events")
         artifact.add_file(str(path))
         run.log_artifact(artifact)

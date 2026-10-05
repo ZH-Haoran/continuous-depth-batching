@@ -96,6 +96,7 @@ def test_event_export_includes_kv_occupancy(tmp_path) -> None:
         recompute_events=[(10.4, 8)],
         stage_timeline_samples=[(10.4, "prefill", 2)],
         transfer_duration_samples=[(10.3, "gpu_to_cpu", 1.25)],
+        restore_events=[(10.7, "r")],
     )
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     kv = next(row for row in rows if row["type"] == "kv")
@@ -119,3 +120,5 @@ def test_event_export_includes_kv_occupancy(tmp_path) -> None:
     duration = next(row for row in rows if row["type"] == "kv_transfer_duration")
     assert duration == {"type": "kv_transfer_duration", "time_s": pytest.approx(0.3),
                         "direction": "gpu_to_cpu", "duration_ms": 1.25}
+    restore = next(row for row in rows if row["type"] == "restore")
+    assert restore == {"type": "restore", "time_s": pytest.approx(0.7), "request_id": "r"}

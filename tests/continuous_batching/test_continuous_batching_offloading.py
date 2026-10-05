@@ -390,6 +390,7 @@ def test_swap_offload_then_restore_round_trips_kv_blocks_on_cpu() -> None:
             value_views[layer][block_id] = 0
 
     manager.restore_scheduled_requests([FutureRequestState(state, has_new_token=True, query_length=1)])
+    assert manager.restore_events[0][1] == "r"
 
     expected_bytes = offloaded_blocks * 2 * len(cache.key_cache) * cache.block_size * cache.num_key_value_heads * cache.head_dim * cache.dtype.itemsize
     assert [(direction, size) for _, direction, size in manager.kv_transfer_events] == [

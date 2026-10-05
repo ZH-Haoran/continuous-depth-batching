@@ -72,6 +72,7 @@ class OffloadingManager:
         self.kv_transfer_events: list[tuple[float, str, int]] = []
         self.recompute_events: list[tuple[float, int]] = []
         self._pending_transfer_timings: list[tuple[float, str, torch.cuda.Event, torch.cuda.Event]] = []
+        self.restore_events: list[tuple[float, str]] = []
 
         self._num_cpu_blocks = self._compute_num_cpu_blocks(cpu_offload_space_gib)
         self._cpu_key_cache: list[torch.Tensor] = []
@@ -233,6 +234,8 @@ class OffloadingManager:
             state.is_cpu_offloaded = False
             state.allocated_blocks = len(gpu_blocks)
             self.num_restores += 1
+            if self.record_preemption_events:
+                self.restore_events.append((time.perf_counter(), state.request_id))
 
         if not all_cpu_indices:
             return
@@ -342,3 +345,4 @@ class OffloadingManager:
         self.kv_transfer_events.clear()
         self.recompute_events.clear()
         self._pending_transfer_timings.clear()
+        self.restore_events.clear()

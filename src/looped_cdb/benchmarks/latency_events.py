@@ -25,6 +25,7 @@ def write_latency_events(
     recompute_events: Iterable[tuple[float, int]] = (),
     stage_timeline_samples: Iterable[tuple[float, str, int]] = (),
     transfer_duration_samples: Iterable[tuple[float, str, float]] = (),
+    restore_events: Iterable[tuple[float, str]] = (),
 ) -> Path:
     """Write one measured run; all timestamps are seconds since the run began."""
 
@@ -74,6 +75,8 @@ def write_latency_events(
         for stamp, direction, duration_ms in transfer_duration_samples:
             _write_line(handle, {"type": "kv_transfer_duration", "time_s": stamp - start_time,
                                  "direction": direction, "duration_ms": duration_ms})
+        for stamp, request_id in restore_events:
+            _write_line(handle, {"type": "restore", "time_s": stamp - start_time, "request_id": request_id})
     return path
 
 
