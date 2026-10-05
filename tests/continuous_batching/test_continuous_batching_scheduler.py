@@ -146,6 +146,11 @@ def test_kv_headroom_pause_requires_an_admissible_waiter() -> None:
     scheduler.sample_waiting_queue()
     assert scheduler.kv_admission_pause_samples[-1][1] == 1
 
+    scheduler.block_new_requests = True
+    scheduler.sample_waiting_queue()
+    assert scheduler.kv_admission_pause_samples[-1][1] == 0
+    scheduler.block_new_requests = False
+
     scheduler.cache.free_blocks("held")
     scheduler.sample_waiting_queue()
     assert scheduler.kv_admission_pause_samples[-1][1] == 0

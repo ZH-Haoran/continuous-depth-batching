@@ -300,6 +300,7 @@ class BaseServingScheduler[RequestT: SchedulableRequest]:
 
         return (
             self.kv_pressure_mode != "reserve"
+            and not self.block_new_requests
             and self.free_residency_slots() >= self.min_free_slots
             and any(not state.is_cpu_offloaded for state in self.waiting_requests.values())
             and self.has_decode_work()

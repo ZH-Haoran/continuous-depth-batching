@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from looped_cdb.benchmarks.latency_events import comparison_row
+from looped_cdb.benchmarks.latency_events import _percentile, comparison_row
 
 
 def _preemption_stalls(path: Path) -> dict[str, list[list[float | str]]]:
@@ -274,9 +274,8 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
             )
         for policy, stalls in _preemption_stalls(path).items():
             if stalls:
-                durations = sorted(row[1] for row in stalls)
-                index = int(0.95 * (len(durations) - 1))
-                run.log({f"preemption/{policy}_to_next_token_p95_ms": durations[index]})
+                p95 = _percentile([row[1] for row in stalls], 95)
+                run.log({f"preemption/{policy}_to_next_token_p95_ms": p95})
                 table = wandb.Table(columns=["elapsed_s", "stall_ms", "request_id"], data=stalls[:10000])
                 run.log({f"preemption/{policy}_to_next_token_ms": wandb.plot.scatter(
                     table, "elapsed_s", "stall_ms", title=f"{policy.title()} to next output token (ms)"
@@ -336,8 +335,7 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
                 )})
         for direction, durations in _kv_transfer_duration_rows(path).items():
             if durations:
-                ordered = sorted(row[1] for row in durations)
-                p95 = ordered[int(0.95 * (len(ordered) - 1))]
+                p95 = _percentile([row[1] for row in durations], 95)
                 run.log({f"kv_transfer/{direction}_p95_ms": p95})
                 chart_rows = durations
                 if len(chart_rows) > 10000:
@@ -349,8 +347,8 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
                 )})
         restore_wait = _offload_restore_wait_rows(path)
         if restore_wait:
-            durations = sorted(row[1] for row in restore_wait)
-            run.log({"preemption/offload_to_restore_p95_ms": durations[int(0.95 * (len(durations) - 1))]})
+            p95 = _percentile([row[1] for row in restore_wait], 95)
+            run.log({"preemption/offload_to_restore_p95_ms": p95})
             chart_rows = restore_wait
             if len(chart_rows) > 10000:
                 stride = math.ceil(len(chart_rows) / 10000)

@@ -172,3 +172,7 @@ def test_offload_restore_wait_matches_request_and_ignores_recompute(tmp_path: Pa
     rows = wandb_serving._offload_restore_wait_rows(path)
 
     assert rows == [[1.8, pytest.approx(800), "a"]]
+
+
+def test_diagnostic_p95_uses_latency_percentile_definition() -> None:
+    assert wandb_serving._percentile([100.0, 200.0], 95) == pytest.approx(195.0)
