@@ -63,7 +63,7 @@ Job logs are written to `logs/<script-name>/`.
 The shell scripts under [`shells/paper/`](shells/paper/) reproduce all experiments reported in the paper.
 See [`shells/paper/README.md`](shells/paper/README.md) for details.
 
-For the optional online-serving diagnostics and W&B metric definitions, see
+For the optional online-serving diagnostics, W&B metric definitions, and result interpretation, see
 [`SERVING_METRICS.md`](SERVING_METRICS.md).
 
 ## Minimal CDB example
