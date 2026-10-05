@@ -42,6 +42,7 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
         queue_samples=[(10.1, 1)],
         start_time=10,
         kv_usage_samples=[(10.1, 2), (10.3, 4)],
+        resident_usage_samples=[(10.1, 1), (10.3, 0)],
     )
     logged = []
     artifacts = []
@@ -91,4 +92,6 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
     assert kv_chart["table"]["data"] == [[pytest.approx(0.1), 25.0], [pytest.approx(0.3), 50.0]]
     assert kv_chart["x"] == "elapsed_s"
     assert kv_chart["y"] == "used_pct"
+    resident_chart = logged[3]["batch/resident_requests"]
+    assert resident_chart["table"]["data"] == [[pytest.approx(0.1), 1], [pytest.approx(0.3), 0]]
     assert artifacts[0].files == [str(path)]

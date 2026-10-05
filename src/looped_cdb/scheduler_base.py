@@ -237,6 +237,7 @@ class BaseServingScheduler[RequestT: SchedulableRequest]:
         self.record_queue_samples = False
         self.waiting_queue_samples: list[tuple[float, int]] = []
         self.kv_usage_samples: list[tuple[float, int]] = []
+        self.resident_usage_samples: list[tuple[float, int]] = []
         # Requests that finished generating, and the tokens they generated; preemption does not count.
         self.completed_requests = 0
         self.completed_generated_tokens = 0
@@ -290,6 +291,7 @@ class BaseServingScheduler[RequestT: SchedulableRequest]:
             stamp = time.perf_counter()
             self.waiting_queue_samples.append((stamp, len(self.waiting_requests)))
             self.kv_usage_samples.append((stamp, self.cache.num_blocks - self.cache.get_num_free_blocks()))
+            self.resident_usage_samples.append((stamp, len(self.active_requests)))
 
     @property
     def mean_resident_requests(self) -> float:

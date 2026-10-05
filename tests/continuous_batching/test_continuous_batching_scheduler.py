@@ -122,6 +122,18 @@ def test_kv_usage_samples_follow_allocations_and_reset() -> None:
     assert scheduler.kv_usage_samples == []
 
 
+def test_resident_usage_samples_track_active_requests() -> None:
+    scheduler = FIFOScheduler(_cache(), safety_margin=0.0)
+    scheduler.record_queue_samples = True
+    scheduler.sample_waiting_queue()
+    scheduler.active_requests["held"] = RequestState(request_id="held", initial_tokens=[1])
+    scheduler.sample_waiting_queue()
+
+    assert [count for _, count in scheduler.resident_usage_samples] == [0, 1]
+    scheduler.reset()
+    assert scheduler.resident_usage_samples == []
+
+
 def _decode_and_prefill_scheduler(safety_margin: float) -> tuple[FIFOScheduler, RequestState, RequestState]:
     scheduler = FIFOScheduler(_cache(), safety_margin=safety_margin)
     decoding = RequestState(request_id="decode", initial_tokens=[10])

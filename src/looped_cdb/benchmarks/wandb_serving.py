@@ -48,6 +48,21 @@ def _kv_table_rows(path: Path, *, num_blocks: int, limit: int = 10000) -> list[l
     return reduced[: limit - 1] + [rows[-1]] if len(reduced) > limit else reduced
 
 
+def _resident_table_rows(path: Path, limit: int = 10000) -> list[list[float | int]]:
+    rows: list[list[float | int]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        if row["type"] == "resident":
+            rows.append([row["time_s"], row["requests"]])
+    if len(rows) <= limit:
+        return rows
+    stride = max(1, (len(rows) - 1) // (limit - 1))
+    reduced = rows[::stride]
+    if reduced[-1] != rows[-1]:
+        reduced.append(rows[-1])
+    return reduced[: limit - 1] + [rows[-1]] if len(reduced) > limit else reduced
+
+
 def log_serving_run(path: Path, *, project: str) -> str | None:
     """Log comparable scalar metrics, queue samples, and the complete event file to W&B."""
 
@@ -87,6 +102,16 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
                         )
                     }
                 )
+        resident_rows = _resident_table_rows(path)
+        if resident_rows:
+            resident_table = wandb.Table(columns=["elapsed_s", "requests"], data=resident_rows)
+            run.log(
+                {
+                    "batch/resident_requests": wandb.plot.line(
+                        resident_table, "elapsed_s", "requests", title="Active requests"
+                    )
+                }
+            )
         artifact = wandb.Artifact(name=f"serving-events-{run.id}", type="serving-events")
         artifact.add_file(str(path))
         run.log_artifact(artifact)
