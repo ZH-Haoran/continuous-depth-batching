@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -111,6 +112,26 @@ def _kv_transfer_rows(path: Path) -> dict[str, list[list[float]]]:
     return events
 
 
+def _arrival_window_token_rate(path: Path) -> tuple[float, list[list[float]]] | None:
+    """Token delivery through the last scheduled arrival, excluding the drain tail."""
+
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    if rows[0]["summary"]["config"].get("request_rate_rps") is None:
+        return None
+    requests = [row for row in rows[1:] if row["type"] == "request"]
+    if not requests:
+        return None
+    end_s = max(row["arrival_s"] for row in requests)
+    if end_s <= 0:
+        return None
+    token_times = [stamp for row in requests for stamp in row["token_ready_s"] if 0 <= stamp <= end_s]
+    bins = [0] * math.ceil(end_s)
+    for stamp in token_times:
+        bins[min(int(stamp), len(bins) - 1)] += 1
+    timeline = [[float(index), count / min(1.0, end_s - index)] for index, count in enumerate(bins)]
+    return len(token_times) / end_s, timeline
+
+
 def log_serving_run(path: Path, *, project: str) -> str | None:
     """Log comparable scalar metrics, queue samples, and the complete event file to W&B."""
 
@@ -199,6 +220,17 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
                 run.log({f"kv_transfer/{direction}_cumulative_gib": wandb.plot.line(
                     table, "elapsed_s", "cumulative_gib", title=f"KV {direction} copied (GiB enqueued)"
                 )})
+        arrival_rate = _arrival_window_token_rate(path)
+        if arrival_rate is not None:
+            rate, timeline = arrival_rate
+            run.log({"throughput/arrival_window_output_tokens_per_s": rate})
+            if len(timeline) > 10000:
+                stride = math.ceil(len(timeline) / 10000)
+                timeline = timeline[::stride]
+            table = wandb.Table(columns=["elapsed_s", "output_tokens_per_s"], data=timeline)
+            run.log({"throughput/arrival_window_token_rate": wandb.plot.line(
+                table, "elapsed_s", "output_tokens_per_s", title="Output tokens/s while requests arrive"
+            )})
         artifact = wandb.Artifact(name=f"serving-events-{run.id}", type="serving-events")
         artifact.add_file(str(path))
         run.log_artifact(artifact)

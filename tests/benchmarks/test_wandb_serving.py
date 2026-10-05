@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -110,3 +111,18 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
     assert logged[9]["kv_transfer/gpu_to_cpu_cumulative_gib"]["table"]["data"] == [[pytest.approx(0.5), 1.0]]
     assert logged[10]["kv_transfer/cpu_to_gpu_gib"] == 1.0
     assert artifacts[0].files == [str(path)]
+
+
+def test_arrival_window_throughput_excludes_drain_tokens(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    events = [
+        {"type": "run", "summary": {"config": {"request_rate_rps": 2.0}}},
+        {"type": "request", "arrival_s": 0.5, "token_ready_s": [0.7, 1.2]},
+        {"type": "request", "arrival_s": 2.0, "token_ready_s": [2.2, 2.7]},
+    ]
+    path.write_text("\n".join(json.dumps(event) for event in events), encoding="utf-8")
+
+    rate, timeline = wandb_serving._arrival_window_token_rate(path)
+
+    assert rate == 1.0
+    assert timeline == [[0.0, 1.0], [1.0, 1.0]]
