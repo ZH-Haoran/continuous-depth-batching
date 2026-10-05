@@ -650,6 +650,7 @@ def main() -> None:
             outputs=outputs,
             queue_samples=engine.scheduler.waiting_queue_samples,
             start_time=measured.start_time,
+            kv_usage_samples=engine.scheduler.kv_usage_samples,
         )
         print(f"latency_events={event_path}")
         if args.wandb_project is not None:

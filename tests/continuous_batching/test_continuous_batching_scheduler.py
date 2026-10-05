@@ -106,6 +106,22 @@ def test_waiting_queue_samples_are_optional_and_reset_between_runs() -> None:
     assert not scheduler.record_queue_samples
 
 
+def test_kv_usage_samples_follow_allocations_and_reset() -> None:
+    scheduler = FIFOScheduler(_cache(), safety_margin=0.0)
+    scheduler.record_queue_samples = True
+    scheduler.sample_waiting_queue()
+    scheduler.cache.allocate_blocks(1, "held", 0)
+    scheduler.sample_waiting_queue()
+
+    assert [used for _, used in scheduler.kv_usage_samples] == [0, 1]
+    assert [stamp for stamp, _ in scheduler.kv_usage_samples] == [
+        stamp for stamp, _ in scheduler.waiting_queue_samples
+    ]
+
+    scheduler.reset()
+    assert scheduler.kv_usage_samples == []
+
+
 def _decode_and_prefill_scheduler(safety_margin: float) -> tuple[FIFOScheduler, RequestState, RequestState]:
     scheduler = FIFOScheduler(_cache(), safety_margin=safety_margin)
     decoding = RequestState(request_id="decode", initial_tokens=[10])

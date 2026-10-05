@@ -24,6 +24,7 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
         "completed_requests_per_second": 1.0,
         "generated_tokens_per_second": 2.0,
         "device_name": "test GPU",
+        "kv_cache": {"num_blocks": 8},
     }
     output = SimpleNamespace(
         request_id="r",
@@ -34,7 +35,14 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
         prompt_ids=[1],
         generated_tokens=[2, 3],
     )
-    path = write_latency_events(tmp_path, summary=summary, outputs=[output], queue_samples=[(10.1, 1)], start_time=10)
+    path = write_latency_events(
+        tmp_path,
+        summary=summary,
+        outputs=[output],
+        queue_samples=[(10.1, 1)],
+        start_time=10,
+        kv_usage_samples=[(10.1, 2), (10.3, 4)],
+    )
     logged = []
     artifacts = []
 
@@ -66,6 +74,7 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
     fake_wandb = SimpleNamespace(
         init=lambda **kwargs: FakeRun(),
         Table=lambda **kwargs: kwargs,
+        plot=SimpleNamespace(line=lambda table, x, y, title: {"table": table, "x": x, "y": y, "title": title}),
         Artifact=FakeArtifact,
     )
     monkeypatch.setitem(sys.modules, "wandb", fake_wandb)
@@ -78,4 +87,8 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
     assert logged[0]["latency/tbt_p50_ms"] == pytest.approx(600.0)
     assert logged[0]["queue/peak_waiting_requests"] == 1
     assert len(logged[1]["queue/waiting_requests"]["data"]) == 1
+    kv_chart = logged[2]["kv/occupancy_pct"]
+    assert kv_chart["table"]["data"] == [[pytest.approx(0.1), 25.0], [pytest.approx(0.3), 50.0]]
+    assert kv_chart["x"] == "elapsed_s"
+    assert kv_chart["y"] == "used_pct"
     assert artifacts[0].files == [str(path)]

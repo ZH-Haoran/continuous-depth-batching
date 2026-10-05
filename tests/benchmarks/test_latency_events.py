@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -54,3 +55,40 @@ def test_event_export_recomputes_token_gap_distribution(tmp_path) -> None:
     assert row["itl_p50_ms"] == pytest.approx(200.0)
     assert row["request_max_itl_p50_ms"] == pytest.approx(600.0)
     assert row["normalized_mean_ms_per_token"] == pytest.approx(((1400 / 3) + (500 / 2)) / 2)
+
+
+def test_event_export_includes_kv_occupancy(tmp_path) -> None:
+    summary = {
+        "run_id": "kv-test",
+        "config": {
+            "backend": "cb",
+            "refill": False,
+            "workload_name": "sharegpt",
+            "request_rate_rps": 1.0,
+            "exit_threshold": None,
+            "measured_repeat": 0,
+        },
+        "completed_requests": 1,
+        "generated_tokens": 1,
+        "completed_requests_per_second": 1.0,
+        "generated_tokens_per_second": 1.0,
+    }
+    output = SimpleNamespace(
+        request_id="r",
+        created_time=10.0,
+        lifespan=(10.1, 10.5),
+        first_token_time=10.5,
+        token_ready_times=[10.5],
+        prompt_ids=[1],
+        generated_tokens=[2],
+    )
+    path = write_latency_events(
+        tmp_path,
+        summary=summary,
+        outputs=[output],
+        queue_samples=[],
+        start_time=10.0,
+        kv_usage_samples=[(10.2, 3)],
+    )
+    kv = next(row for row in map(json.loads, path.read_text().splitlines()) if row["type"] == "kv")
+    assert kv == {"type": "kv", "time_s": pytest.approx(0.2), "used_blocks": 3}

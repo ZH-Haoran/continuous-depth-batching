@@ -17,6 +17,7 @@ def write_latency_events(
     outputs: Iterable[Any],
     queue_samples: Iterable[tuple[float, int]],
     start_time: float,
+    kv_usage_samples: Iterable[tuple[float, int]] = (),
 ) -> Path:
     """Write one measured run; all timestamps are seconds since the run began."""
 
@@ -45,6 +46,8 @@ def write_latency_events(
             )
         for stamp, waiting in queue_samples:
             _write_line(handle, {"type": "queue", "time_s": stamp - start_time, "waiting_requests": waiting})
+        for stamp, used_blocks in kv_usage_samples:
+            _write_line(handle, {"type": "kv", "time_s": stamp - start_time, "used_blocks": used_blocks})
     return path
 
 
