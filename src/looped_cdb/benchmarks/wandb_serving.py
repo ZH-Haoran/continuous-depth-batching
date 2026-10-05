@@ -10,6 +10,28 @@ from typing import Any
 from looped_cdb.benchmarks.latency_events import comparison_row
 
 
+def _preemption_stalls(path: Path) -> dict[str, list[list[float | str]]]:
+    """Delay from preemption start to that request's next delivered token."""
+
+    requests: dict[str, list[float]] = {}
+    preemptions: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        event = json.loads(line)
+        if event["type"] == "request":
+            requests[event["request_id"]] = event["token_ready_s"]
+        elif event["type"] == "preemption":
+            preemptions.append(event)
+    result: dict[str, list[list[float | str]]] = {"offload": [], "recompute": []}
+    for event in preemptions:
+        next_token = next((stamp for stamp in requests.get(event["request_id"], [])
+                           if stamp >= event["time_s"]), None)
+        if next_token is not None:
+            result[event["policy"]].append(
+                [event["time_s"], 1000 * (next_token - event["time_s"]), event["request_id"]]
+            )
+    return result
+
+
 def _git_commit() -> str | None:
     repository = Path(__file__).resolve().parents[3]
     result = subprocess.run(
@@ -141,6 +163,15 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
                     )
                 }
             )
+        for policy, stalls in _preemption_stalls(path).items():
+            if stalls:
+                durations = sorted(row[1] for row in stalls)
+                index = int(0.95 * (len(durations) - 1))
+                run.log({f"preemption/{policy}_to_next_token_p95_ms": durations[index]})
+                table = wandb.Table(columns=["elapsed_s", "stall_ms", "request_id"], data=stalls[:10000])
+                run.log({f"preemption/{policy}_to_next_token_ms": wandb.plot.scatter(
+                    table, "elapsed_s", "stall_ms", title=f"{policy.title()} to next output token (ms)"
+                )})
         artifact = wandb.Artifact(name=f"serving-events-{run.id}", type="serving-events")
         artifact.add_file(str(path))
         run.log_artifact(artifact)

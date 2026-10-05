@@ -314,6 +314,23 @@ def test_preemption_counters_track_soft_resets_and_reset() -> None:
     assert manager.num_preemptions == 0
 
 
+def test_preemption_event_records_actual_policy_and_clears_on_reset() -> None:
+    cache = _cache()
+    scheduler = FIFOScheduler(cache, safety_margin=0.0)
+    manager = OffloadingManager(cache, scheduler, cpu_offload_space_gib=None)
+    manager.record_preemption_events = True
+    _decoding_request(scheduler, cache, "victim", prompt_len=6)
+
+    manager.offload_one_request()
+
+    assert len(manager.preemption_events) == 1
+    stamp, request_id, policy = manager.preemption_events[0]
+    assert stamp > 0
+    assert (request_id, policy) == ("victim", "recompute")
+    manager.reset()
+    assert manager.preemption_events == []
+
+
 # --- manager swap path end to end (offload -> restore round-trip, CPU) ---------------------------
 
 

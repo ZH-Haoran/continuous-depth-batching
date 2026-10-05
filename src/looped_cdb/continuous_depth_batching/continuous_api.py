@@ -409,6 +409,7 @@ class ContinuousDepthBatchingEngine:
         self._validate_exit_depths(input_ids, max_new_tokens, exit_depths)
         self.reset()
         self.scheduler.record_queue_samples = record_queue_samples
+        self.offloading_manager.record_preemption_events = record_queue_samples
         if warmup:
             self.runner.warmup(self.model, model_kwargs)
 

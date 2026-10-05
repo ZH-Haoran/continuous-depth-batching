@@ -14,6 +14,7 @@ Otherwise they restart from a prompt containing their generated tokens.
 from __future__ import annotations
 
 import logging
+import time
 from collections import deque
 from contextlib import nullcontext
 from typing import Any
@@ -65,6 +66,9 @@ class OffloadingManager:
         self.num_offload_preemptions = 0
         self.num_recompute_preemptions = 0
         self.num_restores = 0
+        # Optional event recording for serving diagnostics; disabled on normal runs.
+        self.record_preemption_events = False
+        self.preemption_events: list[tuple[float, str, str]] = []
 
         self._num_cpu_blocks = self._compute_num_cpu_blocks(cpu_offload_space_gib)
         self._cpu_key_cache: list[torch.Tensor] = []
@@ -175,10 +179,12 @@ class OffloadingManager:
             f"{len(state.generated_tokens)} generated tokens."
         )
 
+        preempted_at = time.perf_counter() if self.record_preemption_events else 0.0
         if self._offload_to_cpu(request_id, state):
             state.prepare_for_offload_requeue()
             new_state = state
             self.num_offload_preemptions += 1
+            policy = "offload"
         else:
             if not self._allow_recompute_fallback:
                 needed = len(self.cache.cache_allocator.block_table.get(request_id, []))
@@ -190,6 +196,10 @@ class OffloadingManager:
                 )
             new_state = state.create_equivalent_initial_request()
             self.num_recompute_preemptions += 1
+            policy = "recompute"
+
+        if self.record_preemption_events:
+            self.preemption_events.append((preempted_at, request_id, policy))
 
         self.scheduler.finish_request(request_id)
         self.scheduler.add_waiting_request(new_state)
@@ -287,3 +297,5 @@ class OffloadingManager:
         self.num_offload_preemptions = 0
         self.num_recompute_preemptions = 0
         self.num_restores = 0
+        self.record_preemption_events = False
+        self.preemption_events.clear()

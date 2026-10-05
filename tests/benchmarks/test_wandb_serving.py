@@ -44,6 +44,7 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
         kv_usage_samples=[(10.1, 2), (10.3, 4)],
         resident_usage_samples=[(10.1, 1), (10.3, 0)],
         kv_admission_pause_samples=[(10.1, 1), (10.3, 0)],
+        preemption_events=[(10.4, "r", "recompute")],
     )
     logged = []
     artifacts = []
@@ -76,7 +77,10 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
     fake_wandb = SimpleNamespace(
         init=lambda **kwargs: FakeRun(),
         Table=lambda **kwargs: kwargs,
-        plot=SimpleNamespace(line=lambda table, x, y, title: {"table": table, "x": x, "y": y, "title": title}),
+        plot=SimpleNamespace(
+            line=lambda table, x, y, title: {"table": table, "x": x, "y": y, "title": title},
+            scatter=lambda table, x, y, title: {"table": table, "x": x, "y": y, "title": title},
+        ),
         Artifact=FakeArtifact,
     )
     monkeypatch.setitem(sys.modules, "wandb", fake_wandb)
@@ -98,4 +102,7 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
     assert logged[4]["kv/admission_paused_s"] == pytest.approx(0.2)
     pause_chart = logged[5]["kv/admission_paused"]
     assert pause_chart["table"]["data"] == [[pytest.approx(0.1), 1], [pytest.approx(0.3), 0]]
+    assert logged[6]["preemption/recompute_to_next_token_p95_ms"] == pytest.approx(400)
+    stall_chart = logged[7]["preemption/recompute_to_next_token_ms"]
+    assert stall_chart["table"]["data"] == [[pytest.approx(0.4), pytest.approx(400), "r"]]
     assert artifacts[0].files == [str(path)]

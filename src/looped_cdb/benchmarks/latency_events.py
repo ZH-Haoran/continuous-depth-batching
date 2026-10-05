@@ -20,6 +20,7 @@ def write_latency_events(
     kv_usage_samples: Iterable[tuple[float, int]] = (),
     resident_usage_samples: Iterable[tuple[float, int]] = (),
     kv_admission_pause_samples: Iterable[tuple[float, int]] = (),
+    preemption_events: Iterable[tuple[float, str, str]] = (),
 ) -> Path:
     """Write one measured run; all timestamps are seconds since the run began."""
 
@@ -54,6 +55,9 @@ def write_latency_events(
             _write_line(handle, {"type": "resident", "time_s": stamp - start_time, "requests": resident})
         for stamp, paused in kv_admission_pause_samples:
             _write_line(handle, {"type": "kv_admission_pause", "time_s": stamp - start_time, "paused": paused})
+        for stamp, request_id, policy in preemption_events:
+            _write_line(handle, {"type": "preemption", "time_s": stamp - start_time,
+                                 "request_id": request_id, "policy": policy})
     return path
 
 

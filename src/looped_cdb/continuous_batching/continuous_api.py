@@ -248,6 +248,7 @@ class ContinuousBatchingEngine:
         max_new_tokens = cap_max_new_tokens_to_model_len(input_ids, max_new_tokens, self.cb_config.max_model_len)
         self.reset()
         self.scheduler.record_queue_samples = record_queue_samples
+        self.offloading_manager.record_preemption_events = record_queue_samples
         if warmup:
             self.runner.warmup(self.model, model_kwargs)
 
