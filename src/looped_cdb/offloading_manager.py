@@ -71,6 +71,7 @@ class OffloadingManager:
         self.preemption_events: list[tuple[float, str, str]] = []
         self.kv_transfer_events: list[tuple[float, str, int]] = []
         self.recompute_events: list[tuple[float, int]] = []
+        self._pending_transfer_timings: list[tuple[float, str, torch.cuda.Event, torch.cuda.Event]] = []
 
         self._num_cpu_blocks = self._compute_num_cpu_blocks(cpu_offload_space_gib)
         self._cpu_key_cache: list[torch.Tensor] = []
@@ -243,13 +244,22 @@ class OffloadingManager:
         # ``all_gpu_indices`` was truncated to ``len(cpu_indices)`` per request, so the two index lists
         # must be equal length; ``strict=True`` turns a future accounting slip into a loud error instead
         # of silently dropping a block's KV.
+        time_copy = self.record_preemption_events and self.cache.device.type == "cuda"
+        start_event = torch.cuda.Event(enable_timing=True) if time_copy else None
+        end_event = torch.cuda.Event(enable_timing=True) if time_copy else None
         with self._stream_ctx():
+            if start_event is not None:
+                start_event.record()
             for cpu_k, gpu_k in zip(self._cpu_key_cache, self._gpu_key_views):
                 for cpu_b, gpu_b in zip(all_cpu_indices, all_gpu_indices, strict=True):
                     gpu_k[gpu_b].copy_(cpu_k[cpu_b], non_blocking=True)
             for cpu_v, gpu_v in zip(self._cpu_value_cache, self._gpu_value_views):
                 for cpu_b, gpu_b in zip(all_cpu_indices, all_gpu_indices, strict=True):
                     gpu_v[gpu_b].copy_(cpu_v[cpu_b], non_blocking=True)
+            if end_event is not None:
+                end_event.record()
+        if start_event is not None and end_event is not None:
+            self._pending_transfer_timings.append((time.perf_counter(), "cpu_to_gpu", start_event, end_event))
         if self.record_preemption_events:
             self.kv_transfer_events.append(
                 (time.perf_counter(), "cpu_to_gpu", len(all_cpu_indices) * self._bytes_per_block())
@@ -275,13 +285,22 @@ class OffloadingManager:
             return False
 
         cpu_indices = [self._free_cpu_blocks.popleft() for _ in range(total)]
+        time_copy = self.record_preemption_events and self.cache.device.type == "cuda"
+        start_event = torch.cuda.Event(enable_timing=True) if time_copy else None
+        end_event = torch.cuda.Event(enable_timing=True) if time_copy else None
         with self._stream_ctx():
+            if start_event is not None:
+                start_event.record()
             for cpu_k, gpu_k in zip(self._cpu_key_cache, self._gpu_key_views):
                 for cpu_b, gpu_b in zip(cpu_indices, gpu_indices, strict=True):
                     cpu_k[cpu_b].copy_(gpu_k[gpu_b], non_blocking=True)
             for cpu_v, gpu_v in zip(self._cpu_value_cache, self._gpu_value_views):
                 for cpu_b, gpu_b in zip(cpu_indices, gpu_indices, strict=True):
                     cpu_v[cpu_b].copy_(gpu_v[gpu_b], non_blocking=True)
+            if end_event is not None:
+                end_event.record()
+        if start_event is not None and end_event is not None:
+            self._pending_transfer_timings.append((time.perf_counter(), "gpu_to_cpu", start_event, end_event))
         if self.record_preemption_events:
             self.kv_transfer_events.append((time.perf_counter(), "gpu_to_cpu", total * self._bytes_per_block()))
 
@@ -297,6 +316,12 @@ class OffloadingManager:
         if state.is_cpu_offloaded:
             self._free_cpu_blocks.extend(self._request_id_to_cpu_blocks.pop(state.request_id, []))
             state.is_cpu_offloaded = False
+
+    def transfer_duration_samples(self) -> list[tuple[float, str, float]]:
+        """Read GPU copy timings after the benchmark's final device synchronization."""
+
+        return [(stamp, direction, start.elapsed_time(end)) for stamp, direction, start, end
+                in self._pending_transfer_timings]
 
     def free_all_waiting_cpu_caches(self) -> None:
         """Return every waiting offloaded request's CPU blocks to the pool (e.g. on reset)."""
@@ -316,3 +341,4 @@ class OffloadingManager:
         self.preemption_events.clear()
         self.kv_transfer_events.clear()
         self.recompute_events.clear()
+        self._pending_transfer_timings.clear()

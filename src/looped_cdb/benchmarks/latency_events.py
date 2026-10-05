@@ -24,6 +24,7 @@ def write_latency_events(
     kv_transfer_events: Iterable[tuple[float, str, int]] = (),
     recompute_events: Iterable[tuple[float, int]] = (),
     stage_timeline_samples: Iterable[tuple[float, str, int]] = (),
+    transfer_duration_samples: Iterable[tuple[float, str, float]] = (),
 ) -> Path:
     """Write one measured run; all timestamps are seconds since the run began."""
 
@@ -70,6 +71,9 @@ def write_latency_events(
         for stamp, stage, batch_size in stage_timeline_samples:
             _write_line(handle, {"type": "stage_launch", "time_s": stamp - start_time,
                                  "stage": stage, "batch_size": batch_size})
+        for stamp, direction, duration_ms in transfer_duration_samples:
+            _write_line(handle, {"type": "kv_transfer_duration", "time_s": stamp - start_time,
+                                 "direction": direction, "duration_ms": duration_ms})
     return path
 
 

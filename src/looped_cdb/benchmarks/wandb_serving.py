@@ -178,6 +178,15 @@ def _stage_launch_rows(path: Path) -> dict[str, list[list[float | int]]]:
     return stages
 
 
+def _kv_transfer_duration_rows(path: Path) -> dict[str, list[list[float]]]:
+    directions: dict[str, list[list[float]]] = {"gpu_to_cpu": [], "cpu_to_gpu": []}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        if row["type"] == "kv_transfer_duration":
+            directions[row["direction"]].append([row["time_s"], row["duration_ms"]])
+    return directions
+
+
 def log_serving_run(path: Path, *, project: str) -> str | None:
     """Log comparable scalar metrics, queue samples, and the complete event file to W&B."""
 
@@ -308,6 +317,19 @@ def log_serving_run(path: Path, *, project: str) -> str | None:
                 table = wandb.Table(columns=["elapsed_s", "batch_size"], data=chart_rows)
                 run.log({f"stage/{stage}_batch_size": wandb.plot.scatter(
                     table, "elapsed_s", "batch_size", title=f"CDB {stage} launches: batch size"
+                )})
+        for direction, durations in _kv_transfer_duration_rows(path).items():
+            if durations:
+                ordered = sorted(row[1] for row in durations)
+                p95 = ordered[int(0.95 * (len(ordered) - 1))]
+                run.log({f"kv_transfer/{direction}_p95_ms": p95})
+                chart_rows = durations
+                if len(chart_rows) > 10000:
+                    stride = math.ceil(len(chart_rows) / 10000)
+                    chart_rows = chart_rows[::stride][:9999] + [durations[-1]]
+                table = wandb.Table(columns=["elapsed_s", "duration_ms"], data=chart_rows)
+                run.log({f"kv_transfer/{direction}_duration_ms": wandb.plot.scatter(
+                    table, "elapsed_s", "duration_ms", title=f"KV {direction} GPU copy time (ms)"
                 )})
         artifact = wandb.Artifact(name=f"serving-events-{run.id}", type="serving-events")
         artifact.add_file(str(path))

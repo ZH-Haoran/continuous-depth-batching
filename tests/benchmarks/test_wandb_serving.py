@@ -49,6 +49,7 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
         kv_transfer_events=[(10.5, "gpu_to_cpu", 1024**3), (10.6, "cpu_to_gpu", 1024**3)],
         recompute_events=[(10.4, 8)],
         stage_timeline_samples=[(10.4, "prefill", 2), (10.6, "recurrent", 1)],
+        transfer_duration_samples=[(10.5, "gpu_to_cpu", 1.25), (10.6, "cpu_to_gpu", 0.75)],
     )
     logged = []
     artifacts = []
@@ -118,6 +119,11 @@ def test_serving_wandb_upload_uses_metrics_and_raw_file(tmp_path: Path, monkeypa
     ]
     assert logged[14]["stage/prefill_batch_size"]["table"]["data"] == [[pytest.approx(0.4), 2]]
     assert logged[15]["stage/recurrent_batch_size"]["table"]["data"] == [[pytest.approx(0.6), 1]]
+    assert logged[16]["kv_transfer/gpu_to_cpu_p95_ms"] == 1.25
+    assert logged[17]["kv_transfer/gpu_to_cpu_duration_ms"]["table"]["data"] == [
+        [pytest.approx(0.5), 1.25]
+    ]
+    assert logged[18]["kv_transfer/cpu_to_gpu_p95_ms"] == 0.75
     assert artifacts[0].files == [str(path)]
 
 
