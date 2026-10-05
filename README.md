@@ -63,6 +63,9 @@ Job logs are written to `logs/<script-name>/`.
 The shell scripts under [`shells/paper/`](shells/paper/) reproduce all experiments reported in the paper.
 See [`shells/paper/README.md`](shells/paper/README.md) for details.
 
+For the optional online-serving diagnostics and W&B metric definitions, see
+[`SERVING_METRICS.md`](SERVING_METRICS.md).
+
 ## Minimal CDB example
 
 The following example loads Huginn with the shared KV cache and early-exit lookahead gate:
