@@ -617,7 +617,11 @@ def main() -> None:
         config=config,
         run_id=(
             f"{mode}-D{args.max_recurrent_depth}-{workload_name}"
-            f"-q{threshold_slug}{rate_slug}-repeat{args.repeat_index}"
+            f"-q{threshold_slug}{rate_slug}"
+            f"-kv{engine.cache.num_blocks}"
+            f"-{engine_args.kv_pressure_mode}"
+            f"-s{args.arrival_seed}"
+            f"-repeat{args.repeat_index}"
         ),
         wall_time_s=measured.wall_time_s,
         generated_tokens=generated_tokens,
