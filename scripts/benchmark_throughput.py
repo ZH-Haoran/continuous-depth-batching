@@ -620,6 +620,7 @@ def main() -> None:
             f"-q{threshold_slug}{rate_slug}"
             f"-kv{engine.cache.num_blocks}"
             f"-{engine_args.kv_pressure_mode}"
+            f"-sm{engine.scheduler.safety_margin:g}"
             f"-s{args.arrival_seed}"
             f"-repeat{args.repeat_index}"
         ),
