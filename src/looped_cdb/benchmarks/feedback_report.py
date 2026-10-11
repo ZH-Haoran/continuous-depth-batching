@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from .feedback import CostTable, RecurrenceTrace, ScheduleResult, simulate_static
-from .feedback_dp import solve_dp_oracle
+from .feedback_dp import DPProgress, solve_dp_oracle
 from .feedback_oracle import solve_oracle
 
 
@@ -42,6 +43,7 @@ def run_experiment(
     max_states: int = 100_000,
     time_limit_s: float = 30,
     plots: bool = True,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Export the same finite token chains under each policy, including the tail."""
     thresholds = tuple(sorted(set(thresholds)))
@@ -49,9 +51,29 @@ def run_experiment(
         raise ValueError("thresholds must be integers in 1..resident_cap")
     if oracle not in ("dp", "astar"):
         raise ValueError("oracle must be dp or astar")
+
+    def log(message: str) -> None:
+        if progress_callback is not None:
+            progress_callback(message)
+
+    def dp_progress(update: DPProgress) -> None:
+        log(
+            f"[dp] {'done' if update.finished else 'running'} elapsed={update.elapsed_seconds:.1f}s "
+            f"solved_states={update.states_evaluated:,} feasible_cache={update.feasible_cache_states:,} "
+            f"depth={update.stack_depth} segments={update.segments_examined:,} "
+            f"pruned={update.pruned_segments:,} memo_hits={update.memo_hits:,}"
+        )
+
+    log(
+        f"[static] scanning {len(thresholds)} thresholds for {len(trace.chains)} sequences / {trace.token_count} tokens"
+    )
     schedules = {k: simulate_static(trace, costs, k) for k in thresholds}
+    best_k = min(schedules, key=lambda k: schedules[k].runtime_ms)
+    best = schedules[best_k].runtime_ms
+    log(f"[static] done best_K={best_k} runtime_ms={best:.6f}")
+    log(f"[oracle] starting {oracle}" + (" (exact, no time/state budget)" if oracle == "dp" else ""))
     if oracle == "dp":
-        result = solve_dp_oracle(trace, costs)
+        result = solve_dp_oracle(trace, costs, progress_callback=dp_progress if progress_callback is not None else None)
         oracle_schedule = result.schedule
         oracle_info = {
             "solver": "dp",
@@ -79,8 +101,10 @@ def run_experiment(
             "max_states": max_states,
             "time_limit_s": time_limit_s,
         }
-    best_k = min(schedules, key=lambda k: schedules[k].runtime_ms)
-    best = schedules[best_k].runtime_ms
+    log(
+        f"[oracle] done exact={oracle_info['exact']} "
+        f"L={oracle_info['lower_bound_ms']:.6f}ms U={oracle_info['upper_bound_ms']:.6f}ms"
+    )
     all_k = thresholds == tuple(range(1, costs.resident_cap + 1))
     gap_lower = best / oracle_info["upper_bound_ms"] if oracle_info["upper_bound_ms"] else None
     gap_upper = best / oracle_info["lower_bound_ms"] if oracle_info["lower_bound_ms"] else None
@@ -114,6 +138,7 @@ def run_experiment(
             "exact": oracle_info["exact"],
         },
     }
+    log(f"[report] writing schedules and report to {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
     write_json(output_dir / "costs.json", costs.to_dict())
     write_json(
@@ -154,7 +179,9 @@ def run_experiment(
     )
     (output_dir / "summary.md").write_text(summary, encoding="utf-8")
     if plots:
+        log("[report] rendering plots")
         plot_report(costs, report, output_dir)
+    log(f"[report] done {output_dir}")
     return report
 
 

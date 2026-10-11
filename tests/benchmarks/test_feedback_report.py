@@ -83,6 +83,15 @@ def test_cli_runs_without_importing_torch_or_plotting(tmp_path, solver):
     report = json.loads((tmp_path / "report.json").read_text())
     assert report["oracle"]["upper_bound_ms"] == 30
     assert report["oracle"]["solver"] == (solver or "dp")
+    assert "[static] scanning" in run.stderr
+    assert "[static] done best_K=" in run.stderr
+    assert "[report] done" in run.stderr
+    if solver != "astar":
+        assert "[dp] running elapsed=" in run.stderr
+        assert "[dp] done elapsed=" in run.stderr
+        assert "solved_states=" in run.stderr
+        assert "feasible_cache=" in run.stderr
+    assert "[dp]" not in run.stdout
 
 
 def test_zero_cost_gap_is_undefined_not_nonfinite_json(tmp_path):

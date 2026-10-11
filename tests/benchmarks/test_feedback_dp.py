@@ -2,6 +2,7 @@
 
 import random
 import sys
+from itertools import count, pairwise
 
 import pytest
 from test_feedback_oracle import exhaustive_opt
@@ -110,3 +111,37 @@ def test_identical_64_slot_chains_and_zero_costs():
 def test_trace_exceeding_resident_cap_is_rejected():
     with pytest.raises(ValueError, match="resident cap"):
         solve_dp_oracle(RecurrenceTrace(((1,), (1,))), CostTable(1, (0, 1), (0, 1), (0, 1)))
+
+
+def test_progress_is_periodic_and_preserves_the_exact_solution(monkeypatch):
+    from looped_cdb.benchmarks import feedback_dp
+
+    trace = RecurrenceTrace(((5, 4, 2), (1, 2, 2), (4, 1, 2), (3, 6, 2)))
+    costs = CostTable(4, (0, 2, 2, 2, 2), (0, 1, 1, 1, 1), (0, 1, 1, 1, 1))
+    baseline = solve_dp_oracle(trace, costs)
+    ticks = count(step=0.25)
+    monkeypatch.setattr(feedback_dp, "perf_counter", lambda: next(ticks))
+    updates = []
+    result = solve_dp_oracle(trace, costs, progress_callback=updates.append, progress_interval_s=1)
+    assert result.schedule == baseline.schedule
+    assert result.core_segments == baseline.core_segments
+    assert result.states_evaluated == baseline.states_evaluated
+    assert result.pruned_segments == baseline.pruned_segments
+    assert len(updates) > 2
+    assert updates[0].states_evaluated == updates[0].segments_examined == 0
+    assert not updates[0].finished
+    assert updates[-1].finished and updates[-1].stack_depth == 0
+    assert updates[-1].states_evaluated == result.states_evaluated
+    assert updates[-1].pruned_segments == result.pruned_segments
+    for earlier, later in pairwise(updates):
+        assert earlier.elapsed_seconds <= later.elapsed_seconds
+        assert earlier.states_evaluated <= later.states_evaluated
+        assert earlier.segments_examined <= later.segments_examined
+        if not later.finished:
+            assert later.elapsed_seconds - earlier.elapsed_seconds >= 1
+
+
+def test_library_solver_stays_silent_without_callback(capsys):
+    solve_dp_oracle(RecurrenceTrace(((2, 1),)), CostTable(1, (0, 1), (0, 1), (0, 1)))
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""

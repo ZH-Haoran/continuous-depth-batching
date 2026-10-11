@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from looped_cdb.benchmarks.feedback import CostTable, generate_trace
@@ -59,6 +60,7 @@ def main() -> None:
         max_states=args.oracle_max_states,
         time_limit_s=args.oracle_time_limit,
         plots=not args.no_plots,
+        progress_callback=lambda message: print(message, file=sys.stderr, flush=True),
     )
     print(
         json.dumps({"best_static": report["best_static"], "oracle": report["oracle"], "gap": report["gap"]}, indent=2)

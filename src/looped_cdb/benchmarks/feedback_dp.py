@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from math import fsum
+from math import fsum, isfinite
 from time import perf_counter
 
 from .feedback import Action, CostTable, RecurrenceTrace, ScheduleResult, State, evaluate_actions
@@ -18,6 +18,18 @@ class DPOracleResult:
     search_seconds: float
     core_segments: tuple[int, ...]
     pruned_segments: int = 0
+
+
+@dataclass(frozen=True)
+class DPProgress:
+    elapsed_seconds: float
+    states_evaluated: int
+    feasible_cache_states: int
+    stack_depth: int
+    segments_examined: int
+    pruned_segments: int
+    memo_hits: int
+    finished: bool = False
 
 
 def _successor(state: State, rounds: int) -> State:
@@ -73,7 +85,13 @@ class _Frame:
             self.best_cost, self.best_rounds = candidate, rounds
 
 
-def solve_dp_oracle(trace: RecurrenceTrace, costs: CostTable) -> DPOracleResult:
+def solve_dp_oracle(
+    trace: RecurrenceTrace,
+    costs: CostTable,
+    *,
+    progress_callback: Callable[[DPProgress], None] | None = None,
+    progress_interval_s: float = 5.0,
+) -> DPOracleResult:
     """Solve the Bellman recurrence exactly, including initial Prelude.
 
     A Boundary flushes all pending tokens, so its successor state has only
@@ -84,10 +102,14 @@ def solve_dp_oracle(trace: RecurrenceTrace, costs: CostTable) -> DPOracleResult:
     wait-for-all suffix supplies an upper bound; unavoidable stage work and
     each sequence's serial chain supply lower bounds to prune macro edges.
     Only fully solved suffix values enter the exact memo.
+    Progress callbacks receive an initial snapshot, periodic snapshots, and a
+    final snapshot. The reachable state count is unknown, so no ETA is estimated.
     """
     started = perf_counter()
     if len(trace.chains) > costs.resident_cap:
         raise ValueError("trace exceeds the resident cap")
+    if not isfinite(progress_interval_s) or progress_interval_s <= 0:
+        raise ValueError("progress_interval_s must be finite and positive")
     initial = trace.initial_state
     # Store both the optimal suffix value and the chosen macro action.
     memo: dict[State, tuple[float, int]] = {(): (0.0, 0)}
@@ -143,9 +165,34 @@ def solve_dp_oracle(trace: RecurrenceTrace, costs: CostTable) -> DPOracleResult:
         )
         return _Frame(state, iter(edges), upper, choice)
 
-    pruned = 0
-    stack = [make_frame(initial)]
+    pruned = examined = memo_hits = 0
+    stack: list[_Frame] = []
+    next_progress = started + progress_interval_s
+
+    def emit_progress(*, finished: bool = False) -> None:
+        nonlocal next_progress
+        if progress_callback is None:
+            return
+        now = perf_counter()
+        progress_callback(
+            DPProgress(
+                elapsed_seconds=now - started,
+                states_evaluated=len(memo) - 1,
+                feasible_cache_states=len(upper_memo) - 1,
+                stack_depth=len(stack),
+                segments_examined=examined,
+                pruned_segments=pruned,
+                memo_hits=memo_hits,
+                finished=finished,
+            )
+        )
+        next_progress = now + progress_interval_s
+
+    emit_progress()
+    stack.append(make_frame(initial))
     while stack:
+        if progress_callback is not None and perf_counter() >= next_progress:
+            emit_progress()
         frame = stack[-1]
         if frame.awaiting is not None:
             h, cost, child = frame.awaiting
@@ -157,7 +204,9 @@ def solve_dp_oracle(trace: RecurrenceTrace, costs: CostTable) -> DPOracleResult:
             stack.pop()
             continue
         h, cost, child = edge
+        examined += 1
         if child in memo:
+            memo_hits += 1
             frame.consider(h, cost + memo[child][0])
         elif cost + remaining_bound(child) >= frame.best_cost:
             pruned += 1
@@ -175,6 +224,7 @@ def solve_dp_oracle(trace: RecurrenceTrace, costs: CostTable) -> DPOracleResult:
         actions.append("boundary")
         state = _successor(state, h)
     schedule = evaluate_actions(trace, costs, tuple(actions))
+    emit_progress(finished=True)
     # Report the replay's summation order, shared with all other schedules.
     return DPOracleResult(
         runtime_ms=schedule.runtime_ms,

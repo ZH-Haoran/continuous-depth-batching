@@ -32,6 +32,8 @@ $$
 
 DP 输出精确 runtime、宏动作序列、重放后的标准 schedule、`states_evaluated`、`pruned_segments` 和 solver wall time。独立逐步穷举与完成搜索的 A* 用于交叉验证；测试 fixture 的 OPT=30，best static=32。
 
+CLI 默认在 DP 开始、每隔 5 秒和结束时打印进度到 stderr，并立即 flush：`solved_states` 是已精确求值的状态数，`feasible_cache` 是可行后缀缓存条目数，`depth` 是当前搜索栈深度，`segments`、`pruned`、`memo_hits` 分别是检查的宏动作数、剪枝数和精确 memo 命中数。另有 static 扫描和报告导出阶段的提示。可达状态总数未知，这些计数不代表完成百分比。
+
 原 A* 保留，显式指定 `--oracle astar` 后，`--oracle-max-states` 与 `--oracle-time-limit` 才生效。它触及预算时仍报告 `L≤OPT≤U`；此时 gap 是 `[T/U,T/L]`。DP 不使用这两个预算，完成后报告 `L=U=OPT` 与精确 `T/OPT`。异质链仍可能产生较大的 DP 状态空间。
 
 每个候选调度独立决定 successor 的释放时刻；OPT 不回放固定 K 产生的退出到达时刻。
