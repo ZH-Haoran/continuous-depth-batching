@@ -1,0 +1,11 @@
+{
+  "format": "looped-cdb-stage-costs-v1",
+  "resident_cap": 4,
+  "metadata": {"source": "analytical_test_fixture_not_GPU_measurement"},
+  "points": [
+    {"batch_size": 1, "core_ms": 2, "coda_ms": 1, "prelude_ms": 1},
+    {"batch_size": 2, "core_ms": 2, "coda_ms": 1, "prelude_ms": 1},
+    {"batch_size": 3, "core_ms": 2, "coda_ms": 1, "prelude_ms": 1},
+    {"batch_size": 4, "core_ms": 2, "coda_ms": 1, "prelude_ms": 1}
+  ]
+}
