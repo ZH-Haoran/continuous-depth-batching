@@ -68,6 +68,9 @@ def build_random_model(settings: SyntheticStageConfig, *, device: str = "cpu", d
 
     from looped_cdb.models.huginn import HuginnConfig, HuginnForCausalLM
 
+    # Huginn has no eager-attention fallback, so Transformers' source heuristic
+    # rejects set_attn_implementation(). Select the backend at construction.
+    attention = f"paged|{settings.backend}" if device.startswith("cuda") else "sdpa"
     config = HuginnConfig(
         n_embd=settings.hidden_size,
         n_heads=settings.num_heads,
@@ -83,7 +86,8 @@ def build_random_model(settings: SyntheticStageConfig, *, device: str = "cpu", d
         bos_token_id=1,
         eos_token_id=2,
         pad_token_id=0,
-        attn_implementation="sdpa",
+        attn_implementation=attention,
+        dtype=getattr(torch, dtype),
     )
     torch.manual_seed(settings.seed)
     previous_dtype = torch.get_default_dtype()
@@ -93,8 +97,10 @@ def build_random_model(settings: SyntheticStageConfig, *, device: str = "cpu", d
             model = HuginnForCausalLM(config).eval()
     finally:
         torch.set_default_dtype(previous_dtype)
-    if device.startswith("cuda"):
-        model.set_attn_implementation(f"paged|{settings.backend}")
+    if model.config._attn_implementation != attention:
+        raise RuntimeError(
+            f"requested attention {attention!r}, but the model selected {model.config._attn_implementation!r}"
+        )
     return model
 
 
