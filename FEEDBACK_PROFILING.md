@@ -98,19 +98,6 @@ uv run --no-sync python scripts/simulate_feedback_batching.py \
 
 导入旧 trace 不会重新采样或截断。每个输出目录包含 `report.json`、`summary.md`、`static.csv`、保存的 `costs.json` / `trace.json`、每个 K 与 oracle 的 schedule CSV，以及成本曲线与 K 对比图（PNG/SVG）。DP 的 `gap.lower=gap.upper=T_best_static/OPT`；检查 `all_thresholds_scanned=true`，确认分子是全部 K 中的最佳值。
 
-### 链长对 static K 的诊断
-
-沿用已有 GPU 成本与已保存的 4-token trace，运行：
-
-```bash
-uv run --no-sync python scripts/diagnose_feedback_chain_length.py \
-  --costs results/feedback/stage_costs.json \
-  --trace results/feedback/trace.json \
-  --output-dir results/feedback/chain_length
-```
-
-入口比较原短链与 64-token 长链，后者保留每条链的原始前缀，追加 geometric(mean=4)、max_depth=32、seed=1 的后续 token。两组都扫描 K=1..B，跳过所有 oracle。`comparison.json` 记录每组最佳 K、时间、每 token 时间和 T(16)/T(best)；`short/` 与 `long/` 各自保存报告、trace、static CSV 和曲线。static 扫描每完成 8 个 K 打印进度。通用入口也支持 `--oracle none`，此时 report 的 `oracle` 和 `gap` 都为 null。
-
 ## 5. 保留的反馈理论雏形
 
 饱和阶段 `n=B`、`q=B-b`。若成本可近似为 `C(b)=a_C+p_C b`、`G(k)=a_B+p_B k`，对固定 core visits R 和配对 Boundary token 数 H，有：

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from looped_cdb.benchmarks.feedback import CostTable, evaluate_actions, generate_trace, simulate_static
+from looped_cdb.benchmarks.feedback import CostTable, evaluate_actions, generate_trace
 from looped_cdb.benchmarks.feedback_report import load_trace, run_experiment
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -50,7 +50,7 @@ def test_budget_stop_reports_bounds_without_claiming_exact_opt(tmp_path):
     assert "exact OPT" not in (tmp_path / "summary.md").read_text()
 
 
-@pytest.mark.parametrize("solver", [None, "dp", "astar", "none"])
+@pytest.mark.parametrize("solver", [None, "dp", "astar"])
 def test_cli_runs_without_importing_torch_or_plotting(tmp_path, solver):
     script = ROOT / "scripts/simulate_feedback_batching.py"
     # A fresh stdlib-only interpreter with explicit src path cannot accidentally
@@ -81,16 +81,12 @@ def test_cli_runs_without_importing_torch_or_plotting(tmp_path, solver):
     )
     assert run.returncode == 0, run.stderr
     report = json.loads((tmp_path / "report.json").read_text())
-    if solver == "none":
-        assert report["oracle"] is report["gap"] is None
-        assert "[oracle]" not in run.stderr
-    else:
-        assert report["oracle"]["upper_bound_ms"] == 30
-        assert report["oracle"]["solver"] == (solver or "dp")
+    assert report["oracle"]["upper_bound_ms"] == 30
+    assert report["oracle"]["solver"] == (solver or "dp")
     assert "[static] scanning" in run.stderr
     assert "[static] done best_K=" in run.stderr
     assert "[report] done" in run.stderr
-    if solver not in ("astar", "none"):
+    if solver != "astar":
         assert "[dp] running elapsed=" in run.stderr
         assert "[dp] done elapsed=" in run.stderr
         assert "solved_states=" in run.stderr
@@ -180,33 +176,3 @@ def test_cli_generated_trace_records_and_applies_max_depth(tmp_path):
     assert report["trace_metadata"]["max_depth"] == 1
     assert report["trace_metadata"]["clipped_tokens"] == 16
     assert report["model"]["observed_max_depth"] == report["model"]["observed_mean_depth"] == 1
-
-
-def test_static_only_skips_both_solvers_and_reports_k16_comparison(tmp_path, monkeypatch):
-    from looped_cdb.benchmarks import feedback_report
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("static-only scan called an oracle")
-
-    monkeypatch.setattr(feedback_report, "solve_dp_oracle", forbidden)
-    monkeypatch.setattr(feedback_report, "solve_oracle", forbidden)
-    _, trace = fixture()
-    costs = CostTable(16, (0, *[2] * 16), (0, *[1] * 16), (0, *[1] * 16))
-    report = run_experiment(costs, trace, tmp_path, thresholds=tuple(range(1, 17)), oracle="none", plots=False)
-    assert report["oracle"] is report["gap"] is None
-    assert not (tmp_path / "oracle_schedule.csv").exists()
-    k16 = simulate_static(trace, costs, 16).runtime_ms
-    assert report["k16_comparison"]["runtime_ms"] == k16
-    assert report["k16_comparison"]["runtime_ratio_to_best"] == k16 / report["best_static"]["runtime_ms"]
-    assert "Oracle: skipped" in (tmp_path / "summary.md").read_text()
-    assert "K=16:" in (tmp_path / "summary.md").read_text()
-
-
-def test_static_only_plots_do_not_draw_oracle_bounds(tmp_path):
-    pytest.importorskip("matplotlib")
-    costs, trace = fixture()
-    run_experiment(costs, trace, tmp_path, thresholds=(1, 2, 3, 4), oracle="none")
-    assert (tmp_path / "static_k.png").stat().st_size > 1000
-    svg = (tmp_path / "static_k.svg").read_text()
-    assert "Best static K" in svg
-    assert "Offline OPT" not in svg
