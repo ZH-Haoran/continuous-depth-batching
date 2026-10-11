@@ -63,6 +63,7 @@ def run_experiment(
             "stop_reason": "solved",
             "search_seconds": result.search_seconds,
             "core_segments": result.core_segments,
+            "pruned_segments": result.pruned_segments,
         }
     else:
         result = solve_oracle(trace, costs, thresholds=thresholds, max_states=max_states, time_limit_s=time_limit_s)

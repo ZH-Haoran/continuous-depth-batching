@@ -46,6 +46,18 @@ def test_macro_edges_match_stepwise_transitions_including_between_exit_rounds():
         assert all(chain[0] > 0 for chain in child)
 
 
+def test_pruning_is_exact_for_zero_nonmonotone_costs_and_unused_resident_slots():
+    rng = random.Random(213)
+    for _ in range(120):
+        cap = rng.randint(1, 5)
+        chains = tuple(
+            tuple(rng.randint(1, 4) for _ in range(rng.randint(1, 3))) for _ in range(rng.randint(1, min(cap, 4)))
+        )
+        costs = CostTable(cap, *((0, *(rng.randint(0, 6) for _ in range(cap))) for _ in range(3)))
+        result = solve_dp_oracle(RecurrenceTrace(chains), costs)
+        assert result.runtime_ms == exhaustive_opt(chains, costs)
+
+
 def test_dynamic_fixture_returns_30_versus_best_static_32():
     trace = RecurrenceTrace(((5, 4, 2), (1, 2, 2), (4, 1, 2), (3, 6, 2)))
     costs = CostTable(4, (0, 2, 2, 2, 2), (0, 1, 1, 1, 1), (0, 1, 1, 1, 1))
@@ -91,7 +103,8 @@ def test_identical_64_slot_chains_and_zero_costs():
     costs = CostTable(64, *((0.0,) * 65 for _ in range(3)))
     result = solve_dp_oracle(trace, costs)
     assert result.runtime_ms == 0
-    assert result.states_evaluated == 3
+    assert 1 <= result.states_evaluated <= 3
+    assert result.pruned_segments > 0
 
 
 def test_trace_exceeding_resident_cap_is_rejected():
