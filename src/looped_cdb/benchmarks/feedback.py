@@ -82,6 +82,7 @@ class RecurrenceTrace:
     """Positive loop demands, one finite chain per initially resident sequence."""
 
     chains: tuple[tuple[int, ...], ...]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.chains or any(not chain for chain in self.chains):
@@ -110,11 +111,13 @@ def generate_trace(
     seed: int = 0,
     distribution: Literal["geometric", "two_point"] = "geometric",
     high_depth: int = 16,
+    max_depth: int = 32,
 ) -> RecurrenceTrace:
     """Generate demands once, independent of when a scheduler releases tokens.
 
     ``two_point`` mixes depths 1 and high_depth with the requested population
-    mean. At mean 4/high 16 it has higher variance than the geometric trace.
+    mean before clipping. Both distributions clip sampled demands to max_depth,
+    matching the finite recurrence limit of the synthetic runtime (default 32).
     """
     if type(sequences) is not int or type(tokens_per_sequence) is not int:
         raise ValueError("sequences and tokens_per_sequence must be integers")
@@ -122,6 +125,8 @@ def generate_trace(
         raise ValueError("positive chain sizes and a finite mean_depth >= 1 are required")
     if distribution not in ("geometric", "two_point"):
         raise ValueError(f"unknown distribution: {distribution}")
+    if type(max_depth) is not int or max_depth < 1:
+        raise ValueError("max_depth must be a positive integer")
     if distribution == "two_point" and (type(high_depth) is not int or high_depth <= 1 or mean_depth > high_depth):
         raise ValueError("two_point requires integer high_depth > 1 and mean_depth <= high_depth")
     rng = random.Random(seed)
@@ -133,7 +138,18 @@ def generate_trace(
             return high_depth if rng.random() < (mean_depth - 1) / (high_depth - 1) else 1
         return 1 + math.floor(math.log1p(-rng.random()) / math.log1p(-1 / mean_depth))
 
-    return RecurrenceTrace(tuple(tuple(draw() for _ in range(tokens_per_sequence)) for _ in range(sequences)))
+    sampled = tuple(tuple(draw() for _ in range(tokens_per_sequence)) for _ in range(sequences))
+    return RecurrenceTrace(
+        tuple(tuple(min(depth, max_depth) for depth in chain) for chain in sampled),
+        metadata={
+            "distribution": distribution,
+            "seed": seed,
+            "mean_depth_before_clipping": mean_depth,
+            "high_depth": high_depth,
+            "max_depth": max_depth,
+            "clipped_tokens": sum(depth > max_depth for chain in sampled for depth in chain),
+        },
+    )
 
 
 def occupancy(state: State) -> tuple[int, int, int]:

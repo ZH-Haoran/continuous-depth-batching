@@ -16,7 +16,7 @@ def load_trace(path: Path) -> RecurrenceTrace:
     data = json.loads(path.read_text(encoding="utf-8"))
     if data.get("format") != "looped-cdb-recurrence-trace-v1":
         raise ValueError("expected looped-cdb-recurrence-trace-v1")
-    return RecurrenceTrace(tuple(tuple(chain) for chain in data["chains"]))
+    return RecurrenceTrace(tuple(tuple(chain) for chain in data["chains"]), metadata=data.get("metadata", {}))
 
 
 def write_json(path: Path, data: Any) -> None:
@@ -64,11 +64,14 @@ def run_experiment(
             "initial_sequences": len(trace.chains),
             "token_count": trace.token_count,
             "core_visits": trace.core_visits,
+            "observed_max_depth": max(max(chain) for chain in trace.chains),
+            "observed_mean_depth": trace.core_visits / trace.token_count,
             "successor_release": "after_coda_and_prelude",
             "action_space": "core_all_runnable_or_boundary_flush_all_pending",
             "timing_scope": "serial_fixed_context_decode_stages_including_initial_prelude_and_final_coda",
         },
         "cost_metadata": costs.metadata,
+        "trace_metadata": trace.metadata,
         "static": rows,
         "best_static": {"k": best_k, "runtime_ms": best, "all_thresholds_scanned": all_k},
         "oracle": {
@@ -90,7 +93,10 @@ def run_experiment(
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     write_json(output_dir / "costs.json", costs.to_dict())
-    write_json(output_dir / "trace.json", {"format": "looped-cdb-recurrence-trace-v1", "chains": trace.chains})
+    write_json(
+        output_dir / "trace.json",
+        {"format": "looped-cdb-recurrence-trace-v1", "chains": trace.chains, "metadata": trace.metadata},
+    )
     write_json(output_dir / "report.json", report)
     with (output_dir / "static.csv").open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))

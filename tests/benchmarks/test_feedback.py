@@ -71,3 +71,27 @@ def test_invalid_chains_are_rejected(chains):
 def test_costs_reject_nonfinite_values():
     with pytest.raises(ValueError, match="finite"):
         CostTable(1, (0, float("nan")), (0, 1), (0, 1))
+
+
+@pytest.mark.parametrize("distribution", ["geometric", "two_point"])
+def test_generated_depths_clip_without_changing_the_random_draws(distribution):
+    args = {
+        "sequences": 4,
+        "tokens_per_sequence": 20,
+        "seed": 7,
+        "distribution": distribution,
+        "mean_depth": 8,
+        "high_depth": 16,
+    }
+    raw = generate_trace(**args, max_depth=1000)
+    clipped = generate_trace(**args, max_depth=3)
+    assert clipped.chains == tuple(tuple(min(depth, 3) for depth in chain) for chain in raw.chains)
+    assert clipped.metadata["max_depth"] == 3
+    assert clipped.metadata["clipped_tokens"] == sum(depth > 3 for chain in raw.chains for depth in chain) > 0
+    assert clipped.metadata["mean_depth_before_clipping"] == 8
+
+
+@pytest.mark.parametrize("max_depth", [0, -1, 1.5, True, None])
+def test_invalid_max_depth_is_rejected(max_depth):
+    with pytest.raises(ValueError, match="max_depth"):
+        generate_trace(max_depth=max_depth)

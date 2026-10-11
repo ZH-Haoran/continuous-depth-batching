@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from looped_cdb.benchmarks.feedback import CostTable, evaluate_actions
+from looped_cdb.benchmarks.feedback import CostTable, evaluate_actions, generate_trace
 from looped_cdb.benchmarks.feedback_report import load_trace, run_experiment
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -101,3 +101,18 @@ def test_serving_benchmark_public_exports_survive_lazy_loading():
     from looped_cdb.benchmarks.workload import Workload as ServingWorkload
 
     assert (BenchmarkConfig, SampledRequest, Workload) == (MetricsConfig, DatasetRequest, ServingWorkload)
+
+
+def test_trace_metadata_roundtrip_and_legacy_trace_is_not_clipped(tmp_path):
+    costs, _ = fixture()
+    trace = generate_trace(sequences=4, tokens_per_sequence=2, max_depth=2)
+    report = run_experiment(costs, trace, tmp_path, thresholds=(1, 2, 3, 4), plots=False)
+    assert report["trace_metadata"] == trace.metadata
+    assert report["trace_metadata"]["max_depth"] == 2
+    assert report["model"]["observed_max_depth"] <= 2
+    assert load_trace(tmp_path / "trace.json") == trace
+    # Previously saved chains retain their demands even if above the new default.
+    legacy = tmp_path / "legacy.json"
+    legacy.write_text(json.dumps({"format": "looped-cdb-recurrence-trace-v1", "chains": [[40]]}))
+    assert load_trace(legacy).chains == ((40,),)
+    assert load_trace(legacy).metadata == {}

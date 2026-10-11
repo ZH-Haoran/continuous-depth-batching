@@ -19,6 +19,9 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--distribution", choices=("geometric", "two_point"), default="geometric")
     parser.add_argument("--high-depth", type=int, default=16)
+    parser.add_argument(
+        "--max-depth", type=int, default=32, help="clip generated depths to the runtime limit (default 32)"
+    )
     scan = parser.add_mutually_exclusive_group()
     scan.add_argument("--thresholds", help="comma-separated K values; default 1,4,8,16,32,64 within cap")
     scan.add_argument("--all-k", action="store_true", help="scan every threshold 1..B to obtain best static K")
@@ -37,6 +40,7 @@ def main() -> None:
             seed=args.seed,
             distribution=args.distribution,
             high_depth=args.high_depth,
+            max_depth=args.max_depth,
         )
     )
     if args.all_k:
