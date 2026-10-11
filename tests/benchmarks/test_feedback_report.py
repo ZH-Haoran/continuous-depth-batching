@@ -131,3 +131,39 @@ def test_unknown_oracle_is_rejected_before_writing_report(tmp_path):
     with pytest.raises(ValueError, match="oracle must be"):
         run_experiment(costs, trace, tmp_path, thresholds=(1, 4), oracle="invalid", plots=False)
     assert not (tmp_path / "report.json").exists()
+
+
+def test_cli_generated_trace_records_and_applies_max_depth(tmp_path):
+    script = ROOT / "scripts/simulate_feedback_batching.py"
+    code = (
+        f"import sys,runpy; sys.path.insert(0,{str(ROOT / 'src')!r}); "
+        "sys.argv=sys.argv[1:]; runpy.run_path(sys.argv[0],run_name='__main__')"
+    )
+    run = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            code,
+            str(script),
+            "--costs",
+            str(FIXTURES / "feedback_costs.json"),
+            "--mean-depth",
+            "80",
+            "--max-depth",
+            "1",
+            "--output-dir",
+            str(tmp_path),
+            "--all-k",
+            "--no-plots",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert run.returncode == 0, run.stderr
+    trace = load_trace(tmp_path / "trace.json")
+    assert trace.chains == ((1, 1, 1, 1),) * 4
+    report = json.loads((tmp_path / "report.json").read_text())
+    assert report["trace_metadata"]["max_depth"] == 1
+    assert report["trace_metadata"]["clipped_tokens"] == 16
+    assert report["model"]["observed_max_depth"] == report["model"]["observed_mean_depth"] == 1
