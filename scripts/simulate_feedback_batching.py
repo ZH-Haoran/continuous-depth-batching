@@ -25,8 +25,9 @@ def main() -> None:
     scan = parser.add_mutually_exclusive_group()
     scan.add_argument("--thresholds", help="comma-separated K values; default 1,4,8,16,32,64 within cap")
     scan.add_argument("--all-k", action="store_true", help="scan every threshold 1..B to obtain best static K")
-    parser.add_argument("--oracle-max-states", type=int, default=100_000)
-    parser.add_argument("--oracle-time-limit", type=float, default=30)
+    parser.add_argument("--oracle", choices=("dp", "astar"), default="dp", help="default: exact post-Boundary DP")
+    parser.add_argument("--oracle-max-states", type=int, default=100_000, help="A* only: expanded-state budget")
+    parser.add_argument("--oracle-time-limit", type=float, default=30, help="A* only: wall time budget in seconds")
     parser.add_argument("--no-plots", action="store_true", help="stdlib-only report; skip matplotlib figures")
     args = parser.parse_args()
     costs = CostTable.from_dict(json.loads(args.costs.read_text(encoding="utf-8")))
@@ -54,6 +55,7 @@ def main() -> None:
         trace,
         args.output_dir,
         thresholds=thresholds,
+        oracle=args.oracle,
         max_states=args.oracle_max_states,
         time_limit_s=args.oracle_time_limit,
         plots=not args.no_plots,

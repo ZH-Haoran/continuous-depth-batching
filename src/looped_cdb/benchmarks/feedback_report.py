@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .feedback import CostTable, RecurrenceTrace, ScheduleResult, simulate_static
+from .feedback_dp import solve_dp_oracle
 from .feedback_oracle import solve_oracle
 
 
@@ -37,6 +38,7 @@ def run_experiment(
     output_dir: Path,
     *,
     thresholds: tuple[int, ...] = (1, 4, 8, 16, 32, 64),
+    oracle: str = "dp",
     max_states: int = 100_000,
     time_limit_s: float = 30,
     plots: bool = True,
@@ -45,13 +47,42 @@ def run_experiment(
     thresholds = tuple(sorted(set(thresholds)))
     if not thresholds or any(type(k) is not int or not 1 <= k <= costs.resident_cap for k in thresholds):
         raise ValueError("thresholds must be integers in 1..resident_cap")
+    if oracle not in ("dp", "astar"):
+        raise ValueError("oracle must be dp or astar")
     schedules = {k: simulate_static(trace, costs, k) for k in thresholds}
-    oracle = solve_oracle(trace, costs, thresholds=thresholds, max_states=max_states, time_limit_s=time_limit_s)
+    if oracle == "dp":
+        result = solve_dp_oracle(trace, costs)
+        oracle_schedule = result.schedule
+        oracle_info = {
+            "solver": "dp",
+            "exact": True,
+            "runtime_ms": result.runtime_ms,
+            "lower_bound_ms": result.runtime_ms,
+            "upper_bound_ms": result.runtime_ms,
+            "states_evaluated": result.states_evaluated,
+            "stop_reason": "solved",
+            "search_seconds": result.search_seconds,
+            "core_segments": result.core_segments,
+        }
+    else:
+        result = solve_oracle(trace, costs, thresholds=thresholds, max_states=max_states, time_limit_s=time_limit_s)
+        oracle_schedule = result.schedule
+        oracle_info = {
+            "solver": "astar",
+            "exact": result.exact,
+            "lower_bound_ms": result.lower_bound_ms,
+            "upper_bound_ms": result.upper_bound_ms,
+            "expanded_states": result.expanded_states,
+            "stop_reason": result.stop_reason,
+            "search_seconds": result.search_seconds,
+            "max_states": max_states,
+            "time_limit_s": time_limit_s,
+        }
     best_k = min(schedules, key=lambda k: schedules[k].runtime_ms)
     best = schedules[best_k].runtime_ms
     all_k = thresholds == tuple(range(1, costs.resident_cap + 1))
-    gap_lower = best / oracle.upper_bound_ms if oracle.upper_bound_ms else None
-    gap_upper = best / oracle.lower_bound_ms if oracle.lower_bound_ms else None
+    gap_lower = best / oracle_info["upper_bound_ms"] if oracle_info["upper_bound_ms"] else None
+    gap_upper = best / oracle_info["lower_bound_ms"] if oracle_info["lower_bound_ms"] else None
     rows = []
     for k, result in schedules.items():
         summary = result.to_dict()
@@ -74,21 +105,12 @@ def run_experiment(
         "trace_metadata": trace.metadata,
         "static": rows,
         "best_static": {"k": best_k, "runtime_ms": best, "all_thresholds_scanned": all_k},
-        "oracle": {
-            "exact": oracle.exact,
-            "lower_bound_ms": oracle.lower_bound_ms,
-            "upper_bound_ms": oracle.upper_bound_ms,
-            "expanded_states": oracle.expanded_states,
-            "stop_reason": oracle.stop_reason,
-            "search_seconds": oracle.search_seconds,
-            "max_states": max_states,
-            "time_limit_s": time_limit_s,
-        },
+        "oracle": oracle_info,
         "gap": {
             "numerator": "best_static" if all_k else "best_scanned_static",
             "lower": gap_lower,
             "upper": gap_upper,
-            "exact": oracle.exact,
+            "exact": oracle_info["exact"],
         },
     }
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -104,26 +126,27 @@ def run_experiment(
         writer.writerows(rows)
     for k, result in schedules.items():
         write_schedule(output_dir / f"static_k_{k}_schedule.csv", result)
-    write_schedule(output_dir / "oracle_schedule.csv", oracle.schedule)
+    write_schedule(output_dir / "oracle_schedule.csv", oracle_schedule)
     source = costs.metadata.get("source", "unspecified_cost_table")
     interval = (
         "undefined (zero cost)"
         if gap_lower is None
         else (
             f"{gap_lower:.4f}"
-            if oracle.exact
+            if oracle_info["exact"]
             else f"[{gap_lower:.4f}, {gap_upper:.4f}]"
             if gap_upper
             else f">={gap_lower:.4f}"
         )
     )
+    state_count = oracle_info.get("states_evaluated", oracle_info.get("expanded_states"))
     summary = (
         f"# Feedback batching result\n\nCost source: `{source}`.\n\n"
         f"Resident cap: {costs.resident_cap}; sequences: {len(trace.chains)}; tokens: {trace.token_count}.\n\n"
         f"Best {'static' if all_k else 'scanned static'}: K={best_k}, {best:.4f} ms.\n\n"
-        f"Oracle: {'exact OPT' if oracle.exact else 'bounded search'}, "
-        f"L={oracle.lower_bound_ms:.4f} ms, U={oracle.upper_bound_ms:.4f} ms "
-        f"({oracle.stop_reason}, {oracle.expanded_states} expanded states).\n\n"
+        f"Oracle ({oracle}): {'exact OPT' if oracle_info['exact'] else 'bounded search'}, "
+        f"L={oracle_info['lower_bound_ms']:.4f} ms, U={oracle_info['upper_bound_ms']:.4f} ms "
+        f"({oracle_info['stop_reason']}, {state_count} states, {oracle_info['search_seconds']:.3f} s).\n\n"
         f"{'Best static' if all_k else 'Best scanned static'} / OPT: {interval}.\n\n"
         "Core advances all runnable tokens. Boundary flushes all pending tokens and releases successors. "
         "The reported OPT is over these two actions with serial, fixed-context stage costs.\n"

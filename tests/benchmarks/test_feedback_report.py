@@ -25,6 +25,10 @@ def test_exported_oracle_schedule_replays_to_exact_runtime(tmp_path):
     costs, trace = fixture()
     report = run_experiment(costs, trace, tmp_path, thresholds=(1, 2, 3, 4), plots=False)
     assert report["oracle"]["exact"]
+    assert report["oracle"]["solver"] == "dp"
+    assert report["oracle"]["runtime_ms"] == 30
+    assert report["oracle"]["states_evaluated"] > 0
+    assert "max_states" not in report["oracle"]
     assert report["best_static"]["runtime_ms"] == 32
     assert report["gap"]["lower"] == report["gap"]["upper"] == pytest.approx(32 / 30)
     assert report["gap"]["numerator"] == "best_static"
@@ -39,14 +43,15 @@ def test_exported_oracle_schedule_replays_to_exact_runtime(tmp_path):
 
 def test_budget_stop_reports_bounds_without_claiming_exact_opt(tmp_path):
     costs, trace = fixture()
-    report = run_experiment(costs, trace, tmp_path, thresholds=(1, 4), max_states=0, plots=False)
+    report = run_experiment(costs, trace, tmp_path, thresholds=(1, 4), oracle="astar", max_states=0, plots=False)
     assert not report["oracle"]["exact"]
     assert report["gap"]["numerator"] == "best_scanned_static"
     assert report["gap"]["lower"] <= 32 / 30 <= report["gap"]["upper"]
     assert "exact OPT" not in (tmp_path / "summary.md").read_text()
 
 
-def test_cli_runs_without_importing_torch_or_plotting(tmp_path):
+@pytest.mark.parametrize("solver", [None, "dp", "astar"])
+def test_cli_runs_without_importing_torch_or_plotting(tmp_path, solver):
     script = ROOT / "scripts/simulate_feedback_batching.py"
     # A fresh stdlib-only interpreter with explicit src path cannot accidentally
     # depend on the pytest process's already-imported torch or matplotlib.
@@ -69,12 +74,15 @@ def test_cli_runs_without_importing_torch_or_plotting(tmp_path):
             str(tmp_path),
             "--all-k",
             "--no-plots",
+            *([] if solver is None else ["--oracle", solver]),
         ],
         capture_output=True,
         text=True,
     )
     assert run.returncode == 0, run.stderr
-    assert json.loads((tmp_path / "report.json").read_text())["oracle"]["upper_bound_ms"] == 30
+    report = json.loads((tmp_path / "report.json").read_text())
+    assert report["oracle"]["upper_bound_ms"] == 30
+    assert report["oracle"]["solver"] == (solver or "dp")
 
 
 def test_zero_cost_gap_is_undefined_not_nonfinite_json(tmp_path):
@@ -116,3 +124,10 @@ def test_trace_metadata_roundtrip_and_legacy_trace_is_not_clipped(tmp_path):
     legacy.write_text(json.dumps({"format": "looped-cdb-recurrence-trace-v1", "chains": [[40]]}))
     assert load_trace(legacy).chains == ((40,),)
     assert load_trace(legacy).metadata == {}
+
+
+def test_unknown_oracle_is_rejected_before_writing_report(tmp_path):
+    costs, trace = fixture()
+    with pytest.raises(ValueError, match="oracle must be"):
+        run_experiment(costs, trace, tmp_path, thresholds=(1, 4), oracle="invalid", plots=False)
+    assert not (tmp_path / "report.json").exists()
