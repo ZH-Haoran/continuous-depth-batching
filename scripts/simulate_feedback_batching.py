@@ -26,7 +26,12 @@ def main() -> None:
     scan = parser.add_mutually_exclusive_group()
     scan.add_argument("--thresholds", help="comma-separated K values; default 1,4,8,16,32,64 within cap")
     scan.add_argument("--all-k", action="store_true", help="scan every threshold 1..B to obtain best static K")
-    parser.add_argument("--oracle", choices=("dp", "astar"), default="dp", help="default: exact post-Boundary DP")
+    parser.add_argument(
+        "--oracle",
+        choices=("dp", "astar", "none"),
+        default="dp",
+        help="default: exact post-Boundary DP; none scans static K only",
+    )
     parser.add_argument("--oracle-max-states", type=int, default=100_000, help="A* only: expanded-state budget")
     parser.add_argument("--oracle-time-limit", type=float, default=30, help="A* only: wall time budget in seconds")
     parser.add_argument("--no-plots", action="store_true", help="stdlib-only report; skip matplotlib figures")
@@ -62,9 +67,7 @@ def main() -> None:
         plots=not args.no_plots,
         progress_callback=lambda message: print(message, file=sys.stderr, flush=True),
     )
-    print(
-        json.dumps({"best_static": report["best_static"], "oracle": report["oracle"], "gap": report["gap"]}, indent=2)
-    )
+    print(json.dumps({key: report[key] for key in ("best_static", "k16_comparison", "oracle", "gap")}, indent=2))
     print(f"wrote {args.output_dir}")
 
 

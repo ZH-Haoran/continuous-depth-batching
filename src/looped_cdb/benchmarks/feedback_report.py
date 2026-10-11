@@ -49,8 +49,8 @@ def run_experiment(
     thresholds = tuple(sorted(set(thresholds)))
     if not thresholds or any(type(k) is not int or not 1 <= k <= costs.resident_cap for k in thresholds):
         raise ValueError("thresholds must be integers in 1..resident_cap")
-    if oracle not in ("dp", "astar"):
-        raise ValueError("oracle must be dp or astar")
+    if oracle not in ("dp", "astar", "none"):
+        raise ValueError("oracle must be dp, astar or none")
 
     def log(message: str) -> None:
         if progress_callback is not None:
@@ -67,11 +67,18 @@ def run_experiment(
     log(
         f"[static] scanning {len(thresholds)} thresholds for {len(trace.chains)} sequences / {trace.token_count} tokens"
     )
-    schedules = {k: simulate_static(trace, costs, k) for k in thresholds}
+    schedules = {}
+    for index, k in enumerate(thresholds, 1):
+        schedules[k] = simulate_static(trace, costs, k)
+        if index % 8 == 0 or index == len(thresholds):
+            log(f"[static] scanned {index}/{len(thresholds)} K={k} runtime_ms={schedules[k].runtime_ms:.6f}")
     best_k = min(schedules, key=lambda k: schedules[k].runtime_ms)
     best = schedules[best_k].runtime_ms
     log(f"[static] done best_K={best_k} runtime_ms={best:.6f}")
-    log(f"[oracle] starting {oracle}" + (" (exact, no time/state budget)" if oracle == "dp" else ""))
+    oracle_schedule = None
+    oracle_info = None
+    if oracle != "none":
+        log(f"[oracle] starting {oracle}" + (" (exact, no time/state budget)" if oracle == "dp" else ""))
     if oracle == "dp":
         result = solve_dp_oracle(trace, costs, progress_callback=dp_progress if progress_callback is not None else None)
         oracle_schedule = result.schedule
@@ -87,7 +94,7 @@ def run_experiment(
             "core_segments": result.core_segments,
             "pruned_segments": result.pruned_segments,
         }
-    else:
+    elif oracle == "astar":
         result = solve_oracle(trace, costs, thresholds=thresholds, max_states=max_states, time_limit_s=time_limit_s)
         oracle_schedule = result.schedule
         oracle_info = {
@@ -101,13 +108,20 @@ def run_experiment(
             "max_states": max_states,
             "time_limit_s": time_limit_s,
         }
-    log(
-        f"[oracle] done exact={oracle_info['exact']} "
-        f"L={oracle_info['lower_bound_ms']:.6f}ms U={oracle_info['upper_bound_ms']:.6f}ms"
-    )
+    if oracle_info is not None:
+        log(
+            f"[oracle] done exact={oracle_info['exact']} "
+            f"L={oracle_info['lower_bound_ms']:.6f}ms U={oracle_info['upper_bound_ms']:.6f}ms"
+        )
     all_k = thresholds == tuple(range(1, costs.resident_cap + 1))
-    gap_lower = best / oracle_info["upper_bound_ms"] if oracle_info["upper_bound_ms"] else None
-    gap_upper = best / oracle_info["lower_bound_ms"] if oracle_info["lower_bound_ms"] else None
+    gap_lower = best / oracle_info["upper_bound_ms"] if oracle_info and oracle_info["upper_bound_ms"] else None
+    gap_upper = best / oracle_info["lower_bound_ms"] if oracle_info and oracle_info["lower_bound_ms"] else None
+    k16 = schedules.get(16)
+    k16_comparison = (
+        {"runtime_ms": k16.runtime_ms, "runtime_ratio_to_best": k16.runtime_ms / best if best else None}
+        if k16 is not None
+        else None
+    )
     rows = []
     for k, result in schedules.items():
         summary = result.to_dict()
@@ -130,13 +144,16 @@ def run_experiment(
         "trace_metadata": trace.metadata,
         "static": rows,
         "best_static": {"k": best_k, "runtime_ms": best, "all_thresholds_scanned": all_k},
+        "k16_comparison": k16_comparison,
         "oracle": oracle_info,
         "gap": {
             "numerator": "best_static" if all_k else "best_scanned_static",
             "lower": gap_lower,
             "upper": gap_upper,
             "exact": oracle_info["exact"],
-        },
+        }
+        if oracle_info is not None
+        else None,
     }
     log(f"[report] writing schedules and report to {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -152,30 +169,41 @@ def run_experiment(
         writer.writerows(rows)
     for k, result in schedules.items():
         write_schedule(output_dir / f"static_k_{k}_schedule.csv", result)
-    write_schedule(output_dir / "oracle_schedule.csv", oracle_schedule)
+    if oracle_schedule is not None:
+        write_schedule(output_dir / "oracle_schedule.csv", oracle_schedule)
     source = costs.metadata.get("source", "unspecified_cost_table")
     interval = (
         "undefined (zero cost)"
         if gap_lower is None
         else (
             f"{gap_lower:.4f}"
-            if oracle_info["exact"]
+            if oracle_info and oracle_info["exact"]
             else f"[{gap_lower:.4f}, {gap_upper:.4f}]"
             if gap_upper
             else f">={gap_lower:.4f}"
         )
     )
-    state_count = oracle_info.get("states_evaluated", oracle_info.get("expanded_states"))
+    oracle_summary = "Oracle: skipped (static K scan only).\n\n"
+    if oracle_info is not None:
+        state_count = oracle_info.get("states_evaluated", oracle_info.get("expanded_states"))
+        oracle_summary = (
+            f"Oracle ({oracle}): {'exact OPT' if oracle_info['exact'] else 'bounded search'}, "
+            f"L={oracle_info['lower_bound_ms']:.4f} ms, U={oracle_info['upper_bound_ms']:.4f} ms "
+            f"({oracle_info['stop_reason']}, {state_count} states, {oracle_info['search_seconds']:.3f} s).\n\n"
+            f"{'Best static' if all_k else 'Best scanned static'} / OPT: {interval}.\n\n"
+        )
+    k16_summary = (
+        f"K=16: {k16.runtime_ms:.4f} ms; T(16)/T(best): {k16_comparison['runtime_ratio_to_best']:.4f}.\n\n"
+        if k16 is not None and best
+        else ""
+    )
     summary = (
         f"# Feedback batching result\n\nCost source: `{source}`.\n\n"
         f"Resident cap: {costs.resident_cap}; sequences: {len(trace.chains)}; tokens: {trace.token_count}.\n\n"
         f"Best {'static' if all_k else 'scanned static'}: K={best_k}, {best:.4f} ms.\n\n"
-        f"Oracle ({oracle}): {'exact OPT' if oracle_info['exact'] else 'bounded search'}, "
-        f"L={oracle_info['lower_bound_ms']:.4f} ms, U={oracle_info['upper_bound_ms']:.4f} ms "
-        f"({oracle_info['stop_reason']}, {state_count} states, {oracle_info['search_seconds']:.3f} s).\n\n"
-        f"{'Best static' if all_k else 'Best scanned static'} / OPT: {interval}.\n\n"
+        f"{k16_summary}{oracle_summary}"
         "Core advances all runnable tokens. Boundary flushes all pending tokens and releases successors. "
-        "The reported OPT is over these two actions with serial, fixed-context stage costs.\n"
+        "Schedules use these two actions with serial, fixed-context stage costs.\n"
     )
     (output_dir / "summary.md").write_text(summary, encoding="utf-8")
     if plots:
@@ -209,18 +237,26 @@ def plot_report(costs: CostTable, report: dict[str, Any], output_dir: Path) -> N
         [row["k"] for row in report["static"]], [row["runtime_ms"] for row in report["static"]], "o-", label="Static K"
     )
     oracle = report["oracle"]
-    if oracle["exact"]:
+    if oracle is not None and oracle["exact"]:
         ax.axhline(oracle["upper_bound_ms"], linestyle="--", color="tab:orange", label="Offline OPT (flush-all)")
-    else:
+    elif oracle is not None:
         ax.axhspan(
             oracle["lower_bound_ms"], oracle["upper_bound_ms"], alpha=0.15, color="tab:orange", label="OPT bound [L, U]"
         )
         ax.axhline(oracle["upper_bound_ms"], linestyle="--", color="tab:orange", label="Oracle feasible U")
-    ax.set(xlabel="Coda threshold K", ylabel="Total serial runtime (ms)", title="Static K versus feedback oracle")
+    if oracle is None:
+        best = report["best_static"]
+        ax.scatter([best["k"]], [best["runtime_ms"]], marker="*", s=140, color="tab:orange", label="Best static K")
+    ax.set(
+        xlabel="Coda threshold K",
+        ylabel="Total serial runtime (ms)",
+        title="Static K scan" if oracle is None else "Static K versus feedback oracle",
+    )
     ax.legend()
     ax.grid(alpha=0.25)
     fig.text(0.01, 0.01, f"Cost source: {source}", fontsize=8)
     fig.tight_layout(rect=(0, 0.04, 1, 1))
     for suffix in ("png", "svg"):
-        fig.savefig(output_dir / f"static_vs_oracle.{suffix}", dpi=160)
+        name = "static_k" if oracle is None else "static_vs_oracle"
+        fig.savefig(output_dir / f"{name}.{suffix}", dpi=160)
     plt.close(fig)
